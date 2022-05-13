@@ -1,7 +1,7 @@
 ---
 layout: post
 title: 走失云间
-categories: Blog
+categories: 小说
 description: 我对盛夏的印象无非是优雅的飞鸟，摇曳的树影，轻柔的叶浪和盛开的紫葳。
 keywords: 小说
 ---
