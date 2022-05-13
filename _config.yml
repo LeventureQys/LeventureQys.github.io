@@ -65,7 +65,7 @@ email: le_venture@foxmail.com
 #    Navigation    #
 # ---------------- #
 navs:
-
+  -
     href: /
     label: 首页
 
