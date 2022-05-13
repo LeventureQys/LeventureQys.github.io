@@ -12,7 +12,7 @@ keywords: Qt，实例，信号收发，C++
 
 内容为：
 
-globalObserver.h
+  globalObserver.h
 
     #ifndef GLOBALOBSERVER_H
     #define GLOBALOBSERVER_H
@@ -96,6 +96,7 @@ obesrverApater.h
 
   
 obesrverApater：该类的主要目的是attach的时候，将传进来的槽函数直接绑定到改类的notify信号，因为传进来的槽函数，要想在触发时去掉用拿不到函数名称，所以借助中间层直接绑定，在触发的时候直接去触发中间层的信号，就可达到目的。
+
 obesrverApaterFactory：创建中间层的工厂，方便类创建。
 
 接下来就主要看看具体函数的实现了：
@@ -107,6 +108,7 @@ obesrverApaterFactory：创建中间层的工厂，方便类创建。
     }
 
 观察者绑定函数实现
+
     void globalObserver::attach(const QString type, QObject *reciver, const char *method)
     {
         obesrverApater *oA = obesrverApaterFactory::getInst()->createObesrverApater();
@@ -118,28 +120,44 @@ obesrverApaterFactory：创建中间层的工厂，方便类创建。
         m_oRelationList.append(data);
     }
 
-- 观察者解绑函数实现
+
+观察者解绑函数实现
 
     void globalObserver::detach(const QString type, const QObject *reciver)
+    
     {
+    
         QList<relationData*>::iterator iter = m_oRelationList.begin();
 
         while (iter != m_oRelationList.end())
+        
         {
+        
             if ((*iter)->type.compare(type) == 0 && (*iter)->reciver == reciver)
+            
             {
+            
                 relationData *data = *iter;
+                
                 m_oRelationList.removeOne((*iter));
 
                 delete data->obesrverApater;
+                
                 delete data;
+                
                 return;
+                
             }
+            
             iter++;
+            
         }
+        
     }
 
+
 观察者触发函数实现
+
     void globalObserver::notify(const QString type)
     {
         QList<relationData*>::iterator iter = m_oRelationList.begin();
@@ -154,6 +172,7 @@ obesrverApaterFactory：创建中间层的工厂，方便类创建。
     }
 
 程序结束时别忘了销毁
+
     globalObserver::~globalObserver()
     {
         //释放列表数据
@@ -171,6 +190,7 @@ obesrverApaterFactory：创建中间层的工厂，方便类创建。
 测试：
 
 测试代码
+
     Widget::Widget(QWidget *parent)
         : QWidget(parent)
     {
