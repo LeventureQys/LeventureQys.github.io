@@ -1,9 +1,9 @@
 ---
 layout: post
 title: 大学生通讯社使用官网说明
-categories: operation-instructio
+categories: 说明书
 description: 关于如何使用大学生通讯社官网后台
-keywords: operation instructio
+keywords: 说明书 
 ---
 
 ## 关于如何从零开始使用大学生通讯社使用官网说明官网后台的说明
