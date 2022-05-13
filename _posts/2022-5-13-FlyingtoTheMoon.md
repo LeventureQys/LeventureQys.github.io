@@ -1,7 +1,7 @@
 ---
 layout: post
 title: 平地飞行
-categories: novel
+categories: 小说
 description: “嘿，你听说了吗，满洲里动物园来了一只大象，成天就坐那，可好笑了。”
 keywords: novel
 ---
