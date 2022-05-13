@@ -4,15 +4,10 @@
 baseurl:
 url: https://leventureqys.github.io/
 date_format: "ordinal"
-#title: 轩先生的人间冒险
-#subtitle: "文丑先生的流水账"
-#description: "写点bug，再写点诗"
-#keywords: C++, Qt, C#,文学, 情书
-title: 大学生通讯社文学部官网
-subtitle: "与肝胆人共事，于无字处读书"
+title: 轩先生的人间冒险
+subtitle: "文丑先生的流水账"
 description: "写点bug，再写点诗"
-#keywords: C++, Qt, C#,文学, 情书
-keywords: 文学，征稿启事，散文，诗歌，小说
+keywords: C++, Qt, C#,文学, 情书
 timezone: Asia/Shanghai
 encoding: "utf-8"
 # 页面左下角显示的年份
@@ -78,21 +73,21 @@ navs:
     href: /categories/
     label: 分类
 
-#   -
-#     href: /archives/
-#     label: 归档
+   -
+     href: /archives/
+     label: 归档
 
-#   -
-#     href: /open-source/
-#     label: 开源
+   -
+     href: /open-source/
+     label: 开源
 
  # -
 #    href: /wiki/
 #    label: 维基
 
- # -
-#    href: /links/
- #   label: 链接
+  -
+    href: /links/
+    label: 链接
 
   -
     href: /about/
