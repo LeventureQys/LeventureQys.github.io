@@ -111,8 +111,9 @@ MainWindow.cpp
 
   //三个鼠标事件的重写
   //鼠标按下事件
-  void MainWindow::mousePressEvent(QMouseEvent *event)
-  {
+  
+      void MainWindow::mousePressEvent(QMouseEvent *event)
+      {
       switch(event->button())
       {
           case Qt::LeftButton:
@@ -139,8 +140,8 @@ MainWindow.cpp
 
 
   //鼠标移动事件
-  void MainWindow::mouseMoveEvent(QMouseEvent *event)
-  {
+ void MainWindow::mouseMoveEvent(QMouseEvent *event)
+ {
       QPoint globalPoint = event->globalPos();   //鼠标全局坐标
 
       QRect rect = this->rect();  //rect == QRect(0,0 1280x720)
@@ -264,6 +265,7 @@ MainWindow.cpp
 
 
     //鼠标释放事件
+    
     void MainWindow::mouseReleaseEvent(QMouseEvent *event)
     {
       if (event->button() == Qt::LeftButton)
