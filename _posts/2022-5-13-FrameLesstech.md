@@ -15,36 +15,38 @@ keywords: Qt，技术，实例
 
 在程序中定义Padding 为2，并同时定义枚举类型。
 
-  #define PADDING 2
-  enum Direction { UP=0, DOWN=1, LEFT, RIGHT, LEFTTOP, LEFTBOTTOM, RIGHTBOTTOM, RIGHTTOP, NONE };
+    #define PADDING 2
+    enum Direction { UP=0, DOWN=1, LEFT, RIGHT, LEFTTOP, LEFTBOTTOM, RIGHTBOTTOM, RIGHTTOP, NONE };
 
 在.cpp中设置当前窗口
-  this->setWindowFlags(Qt::FramelessWindowHint);                //取消标题栏
-  // 去掉标题栏,去掉工具栏，窗口置顶
-  setWindowFlags(Qt::FramelessWindowHint | Qt::Tool | Qt::WindowStaysOnTopHint);
-  setWindowOpacity(0.7); //设置窗体透明度
+
+    this->setWindowFlags(Qt::FramelessWindowHint);                //取消标题栏
+    // 去掉标题栏,去掉工具栏，窗口置顶
+    setWindowFlags(Qt::FramelessWindowHint | Qt::Tool | Qt::WindowStaysOnTopHint);
+    setWindowOpacity(0.7); //设置窗体透明度
 
 重写mouseMoveEvent,mousePressEvent,mouseReleaseEvent
+
 MainWindow.h
 
-  public:
-      void region(const QPoint &currentGlobalPoint);  //鼠标的位置,改变光标
-  protected:
-      //鼠标按下移动及释放事件
-      void mousePressEvent(QMouseEvent *event);
-      void mouseMoveEvent(QMouseEvent *event);
-      void mouseReleaseEvent(QMouseEvent *event);
+    public:
+        void region(const QPoint &currentGlobalPoint);  //鼠标的位置,改变光标
+    protected:
+        //鼠标按下移动及释放事件
+        void mousePressEvent(QMouseEvent *event);
+        void mouseMoveEvent(QMouseEvent *event);
+        void mouseReleaseEvent(QMouseEvent *event);
 
-  private:
-      QPoint m_movePoint;  //鼠标的位置
-      bool isLeftPressDown;  // 判断左键是否按下
-      Direction dir;        // 窗口大小改变时，记录改变方向
+    private:
+        QPoint m_movePoint;  //鼠标的位置
+        bool isLeftPressDown;  // 判断左键是否按下
+        Direction dir;        // 窗口大小改变时，记录改变方向
 
 
 MainWindow.cpp
 
-  void MainWindow::region(const QPoint &currentGlobalPoint)
-  {
+    void MainWindow::region(const QPoint &currentGlobalPoint)
+    {
       // 获取窗体在屏幕上的位置区域，topLeft为坐上角点，rightButton为右下角点
       QRect rect = this->rect();
 
@@ -261,9 +263,9 @@ MainWindow.cpp
   }
 
 
-  //鼠标释放事件
-  void MainWindow::mouseReleaseEvent(QMouseEvent *event)
-  {
+    //鼠标释放事件
+    void MainWindow::mouseReleaseEvent(QMouseEvent *event)
+    {
       if (event->button() == Qt::LeftButton)
       {
           isLeftPressDown = false;
@@ -281,41 +283,42 @@ MainWindow.cpp
 重写nativeEvent事件：
 MainWindow.h
 
-  protected:
-      bool nativeEvent(const QByteArray &eventType, void *message, long *result);
+    protected:
+        bool nativeEvent(const QByteArray &eventType, void *message, long *result);
 
 MainWindow.cpp
-bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, long *result)
-{
-    MSG* msg = (MSG*)message;
-    switch(msg->message)
+
+    bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, long *result)
     {
-    case WM_NCHITTEST:
-        int xPos = GET_X_LPARAM(msg->lParam) - this->frameGeometry().x();
-        int yPos = GET_Y_LPARAM(msg->lParam) - this->frameGeometry().y();
-        if(this->childAt(xPos,yPos) == 0)
+        MSG* msg = (MSG*)message;
+        switch(msg->message)
         {
-            *result = HTCAPTION;
-        }else{
-            return false;
+        case WM_NCHITTEST:
+            int xPos = GET_X_LPARAM(msg->lParam) - this->frameGeometry().x();
+            int yPos = GET_Y_LPARAM(msg->lParam) - this->frameGeometry().y();
+            if(this->childAt(xPos,yPos) == 0)
+            {
+                *result = HTCAPTION;
+            }else{
+                return false;
+            }
+            if(xPos > 0 && xPos < 8)
+                *result = HTLEFT;
+            if(xPos > (this->width() - 8) && xPos < (this->width() - 0))
+                *result = HTRIGHT;
+            if(yPos > 0 && yPos < 8)
+                *result = HTTOP;
+            if(yPos > (this->height() - 8) && yPos < (this->height() - 0))
+                *result = HTBOTTOM;
+            if(xPos > 18 && xPos < 22 && yPos > 18 && yPos < 22)
+                *result = HTTOPLEFT;
+            if(xPos > (this->width() - 22) && xPos < (this->width() - 18) && yPos > 18 && yPos < 22)
+                *result = HTTOPRIGHT;
+            if(xPos > 18 && xPos < 22 && yPos > (this->height() - 22) && yPos < (this->height() - 18))
+                *result = HTBOTTOMLEFT;
+            if(xPos > (this->width() - 22) && xPos < (this->width() - 18) && yPos > (this->height() - 22) && yPos < (this->height() - 18))
+                *result = HTBOTTOMRIGHT;
+            return true;
         }
-        if(xPos > 0 && xPos < 8)
-            *result = HTLEFT;
-        if(xPos > (this->width() - 8) && xPos < (this->width() - 0))
-            *result = HTRIGHT;
-        if(yPos > 0 && yPos < 8)
-            *result = HTTOP;
-        if(yPos > (this->height() - 8) && yPos < (this->height() - 0))
-            *result = HTBOTTOM;
-        if(xPos > 18 && xPos < 22 && yPos > 18 && yPos < 22)
-            *result = HTTOPLEFT;
-        if(xPos > (this->width() - 22) && xPos < (this->width() - 18) && yPos > 18 && yPos < 22)
-            *result = HTTOPRIGHT;
-        if(xPos > 18 && xPos < 22 && yPos > (this->height() - 22) && yPos < (this->height() - 18))
-            *result = HTBOTTOMLEFT;
-        if(xPos > (this->width() - 22) && xPos < (this->width() - 18) && yPos > (this->height() - 22) && yPos < (this->height() - 18))
-            *result = HTBOTTOMRIGHT;
-        return true;
+        return false;
     }
-    return false;
-}
