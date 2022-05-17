@@ -1,4 +1,10 @@
-目录
+---
+layout: post
+title: Qt常用教程链接
+description: 一些常用的教程链接，看了别人整理的收藏过来用下
+categories: 教程
+keywords: 教程,Qt,素材
+---
 
 # 1、天山老妖
 
