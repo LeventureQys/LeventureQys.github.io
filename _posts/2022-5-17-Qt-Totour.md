@@ -6,6 +6,10 @@ categories: 教程
 keywords: 教程,Qt,素材
 ---
 
+# Qt官方文档，神中神，看不懂是我的错不是它的错
+
+https://doc.qt.io/qt-5/classes.html
+
 # 1、天山老妖
 
 转载: [Qt开发学习教程](https://blog.51cto.com/9291927/2138876)
