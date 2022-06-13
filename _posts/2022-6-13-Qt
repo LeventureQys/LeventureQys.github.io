@@ -1,0 +1,10 @@
+---
+layout: post
+title: Qt常用命令和属性，用到了就记一下
+categories: 技巧
+description: 一些常用的，但是变量名不好记的那种，我不一定想得起来
+keywords: 技巧,命令,属性,Qt
+---
+# 
+ 1.令窗体背景透明化 setAttribute(Qt::WA_TranslucentBackground);
+注：这个效果需要写到构造函数中去才能生效
