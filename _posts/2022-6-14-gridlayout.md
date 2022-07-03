@@ -59,3 +59,18 @@ keywords: 教程,Qt,素材,实例
 
 也就是说不论是我们的QGridLayout还是别的什么，都应该是直接输入到scrollAreaWidgetContents，这样就不会出现之前的问题了，控件也可以正常运行了。
 
+
+
+
+## 7-3修改
+
+其实完全没必要用gridlayout来进行这个修改，事实上有一个更简单的方法，就是直接一个个的插入widget，然后对应的位置就直接给它指定了（注：我们这里的窗体大小是要求不能变化的，如果要要求可以变化，则还是需要用到layout）
+
+具体可以上代码
+
+![image](https://user-images.githubusercontent.com/102945300/177041458-2c11643e-3b78-4af6-aa1b-b8d7290abd29.png)
+
+如果需要遍历整个ScrollArea的话，则可以如下：
+
+![image](https://user-images.githubusercontent.com/102945300/177041481-55c7e0db-18c3-4565-9441-0a6084a4bbc7.png)
+
