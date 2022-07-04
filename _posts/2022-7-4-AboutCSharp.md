@@ -116,7 +116,7 @@ keywords: 留档,日报,实例
 
 2.exe接收框架端的消息
 
-到这里了其实就简单了，向软件发送消息，其实就是直接调用WMUser的SendCopyDataMessage方法直接发送就可以了，不需要别的，就是在这里其实不需要额外声明编码格式，之前我声明的是unicode，但是这样传过来的参数反而是乱码了，是真的傻逼
+到这里了其实就简单了，向软件发送消息，其实就是直接调用WMUser的SendCopyDataMessage方法直接发送就可以了，不需要别的，就是在这里其实不需要额外声明编码格式，之前我声明的是unicode，但是这样传过来的参数反而是乱码了，是真的傻逼。
 
 ## 关于如何将座位更新
 
@@ -126,3 +126,24 @@ keywords: 留档,日报,实例
 
 这时候就要用到委托：
 
+    Seats.ValueChanged += new Seats.ValueChangedEventHandler(this.SeatValueChanged);
+    
+在这个软件启动的时候添加这个委托，当Seats中的委托ValueChanged触发的时候，触发当前类下的函数SeatValueChanged，并在这个函数中组装所有的座次信息，将其发送给exe，注：句柄是由软件启动后自己发送给教师端的，所以只有当教师端接收到exe发送过来的消息之后才能感知到框架下学生座位信息变化的效果（不过时间很短就是了）。
+
+## 关于教师端如何向学生端发送消息
+
+这个和之前的 有点不一样，区别在于要知道委托是从哪来传来的，最开始我以为就和WinMessage和 座位的ValueChanged这样的委托消息一样，声明一下就好了，这还是源自对委托的认识不足。而事实上，WinMessage来自WMUser，而ValueChanged来自Seats，但是我自己定义的这个SendToClientMessage呢？并不是某个类延伸出来的方法，只是单独的声明了，这就不对了，这样只能让外部来调用这个ClsTools的委托，而不是从某个类中延伸出来的委托，这就是问题所在。
+
+所以我根据一个向所有学生群发的方法出发，向上去寻找：
+
+这时候才发现，其实我们应该调用的方法，原来是ClsEnTeaching中的Tool_SendMessageToClient方法，而这个所谓的SendToClientMessage方法，其实也就是调用了CallMethod
+
+![image](https://user-images.githubusercontent.com/102945300/177166562-75419fae-e7dd-4ba3-a88b-da393b05c2ac.png)
+
+这样真相大白，其实我们需要的就是clsTools中的SendMessageToClient其实能委托ClsEnTeaching中的Tool_SendMessageToClient方法，并通过其调用NetInterop类，来向学生端发送信号，而不是从某个对象中衍生出一个方法或者对象。
+
+所以我在初始化整个工具类InitTools（）处添加了一行
+
+    this.clsTools.SendToClientMessage += new ClsTools.SendToClientMessageEventHandler(this.Tool_SendMessageToClient);
+    
+这样就可以让我们在clsTools中调用方法的信号发到ClsEnTeaching中，并通过NetInterop发送给学生端，而不是信号无端消失。
