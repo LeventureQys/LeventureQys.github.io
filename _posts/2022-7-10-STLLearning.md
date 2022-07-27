@@ -1,8 +1,8 @@
 ---
 layout: post
-title: C++基础语法学习：STL
+title: C++基础语法学习:STL
 categories: 学习笔记
-description: 少点比较，多点谦虚
+description: 少点比较,多点谦虚
 keywords: 基础语法,C++,STL
 ---
 
