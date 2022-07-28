@@ -106,3 +106,64 @@ Rational a,b,c;
 
 本来这个*号就是被定义的了，现在又要让这个值等于c，那不相当于是这个operator*白写了吗？这样肯定是不行的，但是这么写又非常符合我们的直觉。
 
+另外值得说到的一点，两个成员函数如果只是常量性不同，那么是可以被重载的
+
+比如这个例子：
+
+![image](https://user-images.githubusercontent.com/102945300/181435525-4c79eab3-61b8-4914-a433-24340e25bab0.png)
+
+我们根据对象的常量性不同，调用的函数也不尽相同，当一个普通函数和常函数重载时，如果一个对象是普通对象，那么调用的就是普通对象方法，如果一个对象是常对象，那么调用的就是常函数方法。
+也就是说这个时候，有以下这几种情况![image](https://user-images.githubusercontent.com/102945300/181437589-35c643ad-e281-4775-b4e6-e8d86e6e5abd.png)
+
+成员函数如果是const意味什么？有两种流行概念:bitwise constness or logical constness
+
+bitwise const代表，成员函数只有在不更改对象之任何变量（static除外）时才可以说是const。也就是说const不改变对象内任何一个bit。这样的好处就是很容易看出来问题所在，只用查询是否有对成员变量赋值的动作即可，而且这也是const在c++中对常量性的定义。
+
+但是这里也有问题：我们只是不修改任何值？这样就可以了吗？如果我们从const函数里返回的是指针，那有将会是一个什么情景呢？![image](https://user-images.githubusercontent.com/102945300/181438660-4a76ebc3-c364-41f8-81e9-fe494076ed98.png)
+
+在这个例子里，class 不适当地将其[]符号声明为cosnt成员函数，这个函数返回了一个对象内部值的引用，而且我们的[]也确实不更改pText，也符合我们所谓的bitwise const定义，但是这又会有新的问题，比如如下这段代码：
+
+![image](https://user-images.githubusercontent.com/102945300/181438841-3e8bd4a1-c32f-44e6-9578-1fb99de9de99.png)
+
+也就是说，我们返回的这个引用，它仍然可以通过指针来操作这个const字段的内容，这样就和我们的const精神不符了，那么const也就没有含义了。
+
+另外一个流派：logical constness的含义:const成员函数可以修改他所处理的对象内的某些bits，但只有在客户端侦测不出的情况才得如此，比如CTextBlock class 有可能告诉缓存文本区块的长度一边应付询问：
+
+![image](https://user-images.githubusercontent.com/102945300/181439353-1407b482-19d5-4675-9f19-2058b69d7b5f.png)
+
+比如这个length函数，这显然就不是bitwise const，因为在这里textLength和lengthIsValid都被修改了，这样就不能说是bitwise constness，但是这两笔数据的修改对const CTextBlock对象而言应该是可接受的不是吗？但是编译器不同意啊，这咋整呢？
+
+那么就要利用C++的一个与const相关的摆动场：mutable，mutalble释放掉non static成员变量的bitwise constness约束
+
+也就是这样使用：
+
+![image](https://user-images.githubusercontent.com/102945300/181442256-9ad3ccf7-998e-4505-8b8c-e71ad63ac0ff.png)
+
+### const和non-const成员函数中避免重复
+
+对于bitwise的问题，也许mutable诗歌解决办法，但他不能解决所有的 const相关难题，之前我们说constness不同的话，那函数就可以重载，如果我们要返回的值不一样，就可能会出现一些令人不愉快的代码膨胀问题，比如：
+
+![image](https://user-images.githubusercontent.com/102945300/181443288-2334cccc-0029-446e-a014-23444bc41805.png)
+
+如上，其实是一样的代码，我们却重复了两次，这其实是相当糟糕的写法。那么我们可以试着用
+#### 转型 
+，即强行将const的类型成none const 类型，如下：
+
+![image](https://user-images.githubusercontent.com/102945300/181443639-2d758cf7-b246-4a27-87e4-f0ccb2b213b5.png)
+
+但需要注意的是，转型:cast，并不是一个安全的做法，但是代码重复实在不是一件令人愉快的事。在本例中因为输出的值const operator[]和 none const operator[]之间的唯一差别就是多了个const修饰，所以这样强制转换是安全的，因为不论谁调用non-const operator[]都一定首先有个non-const对象，否则就不能调用这个non-const函数。
+
+另外比较符合直觉的一点就是，为什么不是const函数取调用non-const函数呢？这样不是更方便了，直接给生成的变量添加上一个const属性，是不是就可以了呢？答案是否，这并不是我们该做的事
+
+记住，const成员函数承诺绝不改变其对象的逻辑状态，而non-const成员函数却没有这样的承诺，如果我们在const成员函数里调用non-const函数这样是要冒风险的
+
+请记住：
+
+### 1.将某些东西声明为 const可以帮助编译器检测出错误用法。const可以被施加于任何作用域内的对象、函数参数、函数返回类型、成员函数本体
+
+### 2.编译器强制实施bitwise constness，但你编写程序时应该使用 概念上的常量性
+
+### 3.当const 和 non-const 成员函数有着实质性等价的是现实，令non-const版本调用const版本可避免代码重复
+
+## 1.4确定对象被使用前已被初始化
+
