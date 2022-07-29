@@ -145,9 +145,7 @@ bitwise const代表，成员函数只有在不更改对象之任何变量（stat
 
 ![image](https://user-images.githubusercontent.com/102945300/181443288-2334cccc-0029-446e-a014-23444bc41805.png)
 
-如上，其实是一样的代码，我们却重复了两次，这其实是相当糟糕的写法。那么我们可以试着用
-$\color{#FF0000}{转型}$
-，即强行将const的类型成none const 类型，如下：
+如上，其实是一样的代码，我们却重复了两次，这其实是相当糟糕的写法。那么我们可以试着用转型，即强行将const的类型成none const 类型，如下：
 
 ![image](https://user-images.githubusercontent.com/102945300/181443639-2d758cf7-b246-4a27-87e4-f0ccb2b213b5.png)
 
@@ -159,11 +157,11 @@ $\color{#FF0000}{转型}$
 
 请记住：
 
-$\color{#FF0000}{1.将某些东西声明为 const可以帮助编译器检测出错误用法。const可以被施加于任何作用域内的对象、函数参数、函数返回类型、成员函数本体：}$
+1.将某些东西声明为 const可以帮助编译器检测出错误用法。const可以被施加于任何作用域内的对象、函数参数、函数返回类型、成员函数本体
 
-$\color{#FF0000}{2.编译器强制实施bitwise constness，但你编写程序时应该使用 概念上的常量性}$
+2.编译器强制实施bitwise constness，但你编写程序时应该使用 概念上的常量性
 
-$\color{#FF0000}{3.当const 和 non-const 成员函数有着实质性等价的是现实，令non-const版本调用const版本可避免代码重复}$
+3.当const 和 non-const 成员函数有着实质性等价的是现实，令non-const版本调用const版本可避免代码重复
 
 ## 1.4确定对象被使用前已被初始化
 
