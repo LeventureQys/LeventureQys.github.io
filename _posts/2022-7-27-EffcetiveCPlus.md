@@ -4,6 +4,7 @@ title: Effective C++试读笔记
 description: 简单看看EffectiveC++这本C++程序员圣经
 categories: 笔记
 keywords: 学习,C++,笔记,经验之谈
+topmost: true
 ---
 
 # Part1 习惯C++
