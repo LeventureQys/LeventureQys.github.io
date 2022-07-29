@@ -126,3 +126,23 @@ QDump.cpp:
             dmpGenerate.ApplicationCrashHandler(pException);
             return EXCEPTION_EXECUTE_HANDLER;
         }
+
+
+main.cpp：
+
+        #include "QCrushHandler.h"
+        #include <QtWidgets/QApplication>
+        #include "QDump.h"//方案二
+        #include "QBreakpadHandler.h"//方案一
+        int main(int argc, char *argv[])
+        {
+            QApplication a(argc, argv);
+            //方案二
+            QString g_qsDumpName = "LgInteractSmartCompus";
+            SetUnhandledExceptionFilter((LPTOP_LEVEL_EXCEPTION_FILTER)ApplicationCrashHandler);
+            //方案一
+            QBreakpadInstance.setDumpPath("crashes"); // 设置生成dump文件路径
+            QCrushHandler w;
+            w.show();
+            return a.exec();
+        }
