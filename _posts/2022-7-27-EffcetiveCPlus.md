@@ -336,3 +336,32 @@ w = w 这种写法是合法的，所以我们也要做相应处理
 
 总结一下，作者强调无论是显示还是隐式转换都是要视情况而定的，没有完全的绝对。另外，RAⅡ是的职责是资源管理重在资源释放，虽然访问原始资源突破了类的封装特性，但是这不是RAⅡ的首要存在意义。
 
+### 智能指针
+
+就是有时候如果我们想要写出这样的代码：
+
+![image](https://user-images.githubusercontent.com/102945300/182856601-1f1462bc-c67c-40cd-9273-a68246b37dd4.png)
+
+在f() 内申请的资源在f()就要清除，但是往往事情的走向不会像我们想的那么简单，有可能中途多了个return，有可能goto 或者 异常 让这个delete被忽略跳过了，但是如果是这样的话，那我们申请的这块资源就泄露了。
+
+最好的情况就是，我们总希望控制流离开f()的时候，该对象的析构函数就会自动释放资源。
+
+有一个比较好的方式，就是标准程序库提供的auto_ptr就是针对这种形势设计的产品，auto_ptr是给个 类指针对象 ，也就是所谓的 智能指针，其析构函数自动对其所指对象调用delete
+
+![image](https://user-images.githubusercontent.com/102945300/182859169-fd632b27-711b-4acb-b8ec-e1ff116f7a25.png)
+
+需要注意的是auto_ptr被销毁时会自动删除它所指之物，所以一定要注意别让多个auto_ptr同时指向同一个对象
+
+![image](https://user-images.githubusercontent.com/102945300/182860745-0bcd1e77-8e33-4768-a900-a132a7f7883b.png)
+
+也就是说我们不要用一个智能指针去指向另外一个智能指针，当然了还有一种比较好的智能指针，叫std::tr1::shared_prt
+
+![image](https://user-images.githubusercontent.com/102945300/182862112-4f9a171c-9420-4c86-9f11-c51b00ae607d.png)
+
+另外就是不要再auto_ptr和shared_ptr上使用数组，因为它们只会调用delete而不是delete[]
+
+![image](https://user-images.githubusercontent.com/102945300/182862489-3b3bbb88-29ef-479c-a33d-21b5682c193d.png)
+
+当然如果你需要用的时候，可以尝试使用vector，或者用Boost里面的boost::scoped_array和boost::shared_array classes
+
+
