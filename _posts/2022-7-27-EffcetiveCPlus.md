@@ -364,4 +364,35 @@ w = w 这种写法是合法的，所以我们也要做相应处理
 
 当然如果你需要用的时候，可以尝试使用vector，或者用Boost里面的boost::scoped_array和boost::shared_array classes
 
+## 14.在资源管理类中小心coping行为
 
+当一个RAII对象被复制，会发生什么事？
+
+1.禁止复制。允许RAII对象被复制本身就不怎么合理。
+
+    class Lock:private Uncopyable{
+    public:
+     ...
+    }
+
+2.对底层资源进行 “引用计数法” 有时候我们希望保佑资源，直到他的最后一个使用者被销毁。 就比如这个tr1::shared_ptr的底层原理
+
+3. 复制底层资源。有时候只要你想，可以针对一份资源拥有其任意数量的副本。而你需要“资源管理类”的唯一理由就是当你不再需要某个副本时确保它被释放。在此情况下复制所包覆的资源，就是一种深度拷贝。
+
+4.转移底部资源的拥有权。
+
+请记住：
+
+1.复制RAII对象必须一并复制它所管理的资源，所以资源的coping行为决定RAII对象的coping行为。
+
+2.普遍而常见的RAII class copying行为是：抑制copying、施行引用计数法。不过其他行为也都可能被实现。
+
+## 15.在资源管理类中提供对原始资源的访问
+
+就比如我一个类内的函数 int daysHeld(const Investment* pi) 返回投资天数
+
+如果我们有一个智能指针对象 std::tr1::shared_ptr<Investment> pInv(createInvestment());
+ 
+ 这样直接调用int days = daysHeld(pInv)是非法的，不过智能指针有一个get成员函数，可以用以执行显示转换，会返回智能指针内部的原始指针。
+ 
+ 可以使用 int days = daysheld(pInv.get()); 
