@@ -2,7 +2,7 @@
 title: 关于如何在C#中调用C++的DLL，以及如何在C++中调用C#的DLL
 description: 关于如何在C#中调用C++的DLL，以及如何在C++中调用C#的DLL
 categories: 笔记
-keywords: 学习笔记,C++,C#,CLR,联合开发
+keywords: qt,学习笔记,C++,C#,CLR,联合开发
 ---
 
 # 一、关于如何在C#中调用C++的DLL，以及如何在C++中调用C#的DLL
