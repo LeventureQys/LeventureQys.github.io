@@ -5,7 +5,7 @@ categories: 笔记
 keywords: 学习笔记,C++,C#,CLR,联合开发
 ---
 
-# 关于如何在C#中调用C++的DLL，以及如何在C++中调用C#的DLL
+# 一、关于如何在C#中调用C++的DLL，以及如何在C++中调用C#的DLL
 
 原文章参考：(C# 调用Qt 库)[https://blog.csdn.net/u012761535/article/details/123340968] 注：clr指公共语言运行库
 
@@ -126,5 +126,38 @@ ok，这个类我们要做一点小小的设置，右键MixerwrapCLRWrapper.cpp-
 实现方法同套的第一层壳
 
 ![image](https://user-images.githubusercontent.com/102945300/189319771-4a8336c2-36fb-4a3a-abb3-b003b6c368c8.png)
+
+这里需要注意的是，这里开始已经是CLR语法了，即在C++中写.net 或者说C# 程序的语法，有点怪怪的，但是并没有什么难理解的。
+
+最后我们要对整个工程的性质修改一下，将其改为CLR导出DLL即可，我们在右键工程->属性->配置属性->常规->公共语言运行时支持->公共语言运行时支持(/clr)
+
+![image](https://user-images.githubusercontent.com/102945300/189320330-08fcb894-ad6d-4422-9422-d06e5064d45c.png)
+
+注意是整个工程的，不是某个cpp文件的。
+
+## part3.调用
+
+ok，最恶心的套壳结束了之后，接下来就是调用了。.net程序的托管方式使得程序的dll调用起来比C++的DLL调用舒服很多，我们建立一个新的C#程序，来调用试一下：
+
+建立一个交MicphoneControlTest的窗口工程，简单写个窗口，可以调用两个功能
+
+![image](https://user-images.githubusercontent.com/102945300/189320703-d8ffcea3-fef8-4e3c-8fa7-fb4a3c9e19c8.png)
+
+尝试引用这个dll：右键引用->添加引用->浏览-》找到对应DLL->勾选并确定
+
+当然我在这里偷懒就直接引用这个工程项目了
+
+对象浏览器里应该就能看到这些东西了吧
+
+![image](https://user-images.githubusercontent.com/102945300/189321009-b5ee01a7-21d5-4d5c-93e8-b0e11e93d5d8.png)
+
+这就是我们从CLR这个类中导出的方法什么的了，我们来尝试一下调用
+
+![image](https://user-images.githubusercontent.com/102945300/189321144-5bd97242-44b7-49fd-a597-607541110f2b.png)
+
+尝试一下，点击，功能实现，结束
+
+
+# 二、如何在Qt中调用C#的DLL
 
 
