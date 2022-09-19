@@ -11,6 +11,9 @@ keywords: Qt，技术，实例
 
 [Qt::FramelessWindowHint无边框化，移动，大小调整](https://blog.csdn.net/gongzhengyu/article/details/105879471)插入此业务代码的时候需要注意到就是，这个Direction不是Qt自带的，而是一个Enum，需要注意以下这个点
 
+https://blog.csdn.net/xiezhongyuan07/article/details/80184783#comments_23169895
+
+
 内容如下：
 
 在程序中定义Padding 为2，并同时定义枚举类型。
