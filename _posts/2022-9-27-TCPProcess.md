@@ -50,4 +50,155 @@ keywords: 网络编程,Qt,多线程,高级编程
 
 其实也就和传输tcp信息一样，在已经实现了tcp通讯的前提下，我们在总的数据链上，再写一个自己定义的头，来存放一些信息，比如可以用|符分割，第一段存放xxx，第二段存放xxx，第三段存放xxx。。。以此类推，这样就可以组成一个完整的信息，一个包含了所有需要数据的信息，通过分割的方式来组成一个完整的文件。
 
-就这样吧，有什么后续再谈
+这个就是比较简单的理论介绍，那么现在来看看实际上我们的工程该怎么写这样的文件
+
+首先我们准备一个QtTcpBaseHandler类，这个类是我们做封包收发的基础，也是我们做客户端或者服务端的基础，它不需要有什么别的功能，只需要有基础的收发功能就行，也就是能定义头身尾，发送TCP和接收TCP消息
+
+首先我们来定义一个头
+
+    struct MsgHeader
+    {
+      /*
+      头部12字节
+      [0] = 4;
+      [1] = 'H';
+      [2] = 'E';
+      [3] = 'A';
+      [4] = 'D';
+      [5] = 0;
+      [6] = 0;
+      [7] = 0;
+      [8] = 0;
+      [9] = 0;
+      [10] = 0;
+      [11] = 0;
+      */
+      char gcBaseHeader[12] = { 0 };
+
+      /*
+      4字节，长度信息：内容长度+1
+      */
+      int nMsgBodyLen = 0;
+
+      /*
+      预留字节
+      */
+      char gcReserved[12] = { 0 };
+    };
+    
+头部的话比较简单，就是首先你要定义头的前几个字符，以此为标准，然后后续预留几个字节用来发送别的信息，这里存储的信息是5-10字节合起来代表了一个字节长度信息，最后预留第十二字节是0字符结尾，用以代表头部结束。下面来看发送信息
+
+    void SendTcp(QTcpSocket * pTcpSocket, const QByteArray &bytes)
+    {
+      /* 消息结构：头 + 内容 + 结尾符0 */
+      MsgHeader header;
+      header.nMsgBodyLen = bytes.length() + 1;
+
+      QByteArray bytesHeaderInfo((char*)&header, sizeof(MsgHeader));
+      pTcpSocket->write(bytesHeaderInfo);
+
+      char *pData = new char[header.nMsgBodyLen];
+      memset(pData, 0, header.nMsgBodyLen);
+      memcpy_s(pData, header.nMsgBodyLen, bytes.data(), bytes.length());
+      for (int i = 0; i < header.nMsgBodyLen; i += 1024)
+      {
+        pTcpSocket->write(pData + i, qMin(1024, header.nMsgBodyLen - i));
+      }
+
+      delete[] pData;
+    }
+
+发送信息的话，就是把我们要发送的消息和头部信息组装起来，先做一个pData，这个是我们用来发送数组的一个缓冲区，先把所有的数据读到这个缓冲区内，
+
+    //缓冲区
+    memset(pData, 0, header.nMsgBodyLen);
+    memcpy_s(pData, header.nMsgBodyLen, bytes.data(), bytes.length());
+      
+再由QTcpsocket 转手发送出去，每次转发固定长度，像我们这里是固定了它的长度为1024长
+
+    //每次发送1024个字节，当然了如果没有1024个字节了就发剩下的部分就行了。
+    for (int i = 0; i < header.nMsgBodyLen; i += 1024)
+      {
+        pTcpSocket->write(pData + i, qMin(1024, header.nMsgBodyLen - i));
+      }
+
+那这边就是发送端，是一个比较简单的结构，那么来看接收端。接收端的话，因为qt的tcpsocket通信是异步的操作，所以非常有可能导致接收包的动作会因为QThread::sleep 或者 调试阻塞等行为导致一些无法预料的异常，从而导致接收到的包发生占包，丢包，错位等情况。之前也说过了，当前这个tcp通信类只是在本地实现的，所以在头部只有一个信息，就是消息总长度。那么在接收端就需要写一个锁，当我们没有读完上一条tcp消息时，下一条消息到来之前需要阻塞（时间非常短，因为一条消息只有1024个字节，对于现在的局域网来说传输起来没有什么苦困难）
+
+首先我们需要一个接收tcp消息的结构体如下：
+
+    typedef struct tagTCPRecvData
+    {
+      int nExpectSize = 0;	// 期望大小
+      int nRecvedLen = 0;		// 已收大小
+      QByteArray bytes;
+
+      void Clear()
+      {
+        nExpectSize = 0;
+        nRecvedLen = 0;
+        bytes.clear();
+      }
+    }TCPRecvData;
+    
+我们通过这个结构体来接收文件，记录当前期望大小和已接受大小，当已收大小大于等于期望大小时，接收行为结束
+
+为了保证每次申请的结构都能智能释放和不重复读包、读包正确，这里使用了智能指针和哈希表
+
+    using SPTCPRecvData = std::shared_ptr<TCPRecvData>;
+    QHash<QTcpSocket*, SPTCPRecvData> g_qhsSock2RecvData;
+    
+一把同步互斥锁：
+    QMutex g_mtForQhsSock2RecvData;
+    
+整个读取tcp消息的函数如下：
+
+    void ReadTCPMsg(QTcpSocket * pTcpSocket, qint64 &nCountRecvedMsg, fun_Notice funNotice)
+    {
+      QMutexLocker am(&g_mtForQhsSock2RecvData);
+
+      if (!g_qhsSock2RecvData.contains(pTcpSocket))
+      {
+        SPTCPRecvData spTcpRecvData = std::make_shared<TCPRecvData>();
+        g_qhsSock2RecvData.insert(pTcpSocket, spTcpRecvData);
+      }
+      SPTCPRecvData spTcpRecvData = g_qhsSock2RecvData[pTcpSocket];
+
+      while (pTcpSocket->bytesAvailable() > 0)
+      {
+        if (0 == spTcpRecvData->nRecvedLen)
+        {
+          if (pTcpSocket->bytesAvailable() < sizeof(MsgHeader)) return;
+
+          QByteArray bytesHeader = pTcpSocket->read(sizeof(MsgHeader));
+
+          MsgHeader *pHeader = (MsgHeader*)(bytesHeader.data());
+          spTcpRecvData->nExpectSize = pHeader->nMsgBodyLen;
+        }
+
+        int nBytesAvailable = pTcpSocket->bytesAvailable();
+        if (nBytesAvailable > 0)
+        {
+          int nThisRecv = qMin(nBytesAvailable, spTcpRecvData->nExpectSize - spTcpRecvData->nRecvedLen);
+          spTcpRecvData->bytes += pTcpSocket->read(nThisRecv);
+          spTcpRecvData->nRecvedLen += nThisRecv;
+
+          // 其实就是等于，加大于号为了保险...
+          if (spTcpRecvData->nRecvedLen >= spTcpRecvData->nExpectSize)
+          {
+            // 通知
+            if (nullptr != funNotice) funNotice(spTcpRecvData->bytes);
+
+            // 重置
+            spTcpRecvData->Clear();
+          }
+        }
+      }
+
+      nCountRecvedMsg = spTcpRecvData->nRecvedLen;
+    }
+    
+一条锁 QMutexLocker am(&g_mtForQhsSock2RecvData);锁定当前函数，这个 QMutexLocker将保证在销毁前不重复执行当前函数。
+
+后续就是处理具体数据的部分了，就是拆开来慢慢读写的问题，其实既然都能保证数据按队列输入了，接下来也就是考虑意外的问题，这里就没什么好说的了。
+
+那以上这个类就是tcp通讯的收发基础，接下来就是写服务端和客户端两端，也就是应用层。
