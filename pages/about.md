@@ -1,6 +1,6 @@
 ---
 layout: page
-title: About
+title: 关于我
 description: 轩先生随便玩玩
 keywords: Mr.Leventure
 comments: true
