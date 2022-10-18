@@ -74,3 +74,7 @@ PT_Frame|QuitVBroadcast
   //lParam == 1 视频广播展示
   //lParam == 0 视频广播隐藏
   
+
+## 附录1：
+
+视频广播的dmp文件和日志文件会保存在当前目录下的Log(VBroadcast)下
