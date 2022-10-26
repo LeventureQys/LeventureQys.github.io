@@ -4,7 +4,6 @@ title: 李宏毅机器学习笔记:从0到写AI
 categories: 学习笔记
 description: 李宏毅教学视频的学习笔记
 keywords: 机器学习,深度学习,学习,学习笔记
-topmost: true
 ---
 
 # part1.基本介绍
