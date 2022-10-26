@@ -214,22 +214,7 @@ Kill child process when parent process is killed
                   /// <param name="cbJobObjectInfoLength">指明第三个参数的大小</param>
                   /// <returns></returns>
                   [DllImport("kernel32.dll")]
-                  static extern bool SetInformationJobObject(IntPtr hJob, JobObjectInfoType infoType, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);
-
-                  private void WriteErrorMessage(System.String strErrorMessage)
-                  {
-                      DirectoryInfo clsPath = new DirectoryInfo(System.Windows.Forms.Application.StartupPath);
-                      DirectoryInfo clsSubPath = clsPath.CreateSubdirectory("Errlog");
-
-                      if (clsSubPath.Exists)
-                      {
-                          DateTime clsDate = DateTime.Now;
-                          String strPath = clsSubPath.FullName + "\\ClsVideoMeets(" + String.Format("{0:yyyy-MM-dd}", clsDate) + ").log";
-                          StreamWriter clsWriter = new StreamWriter(strPath, true);
-                          clsWriter.WriteLine(String.Format("{0:HH:mm:ss}", clsDate) + " " + strErrorMessage);
-                          clsWriter.Close();
-                      }
-                  }
+                  static extern bool SetInformationJobObject(IntPtr hJob, JobObjectInfoType infoType, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);               
                   const System.String job_name = "Leventure_SeatJob";
                   private System.UInt32 job_ptr = 0;
                   private System.IntPtr job_handle = System.IntPtr.Zero;
