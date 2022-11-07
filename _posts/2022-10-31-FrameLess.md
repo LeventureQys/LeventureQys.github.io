@@ -168,7 +168,7 @@ keywords: 实例,C#,开发日志
 
     }
    
-  # 二、可拖拽大小的windows系统方案：
+# 二、可拖拽大小的windows系统方案：
   
   这个方案拖拽窗体大小是通过系统api实现的，具体怎么实现的我也不是很清楚，之后有时间系统看一下windows高级编程再回来聊聊这个技术点。这里只谈优缺点
   
@@ -315,7 +315,7 @@ keywords: 实例,C#,开发日志
 
       }
       
-  # 三、之前用的老的frameless方案：
+# 三、之前用的老的frameless方案：
   
   最开始在网上找的frameless的方案，没什么好说的，详情见[一个关于如何将widget变成一个像商用软件那样 不可拖拽大小、没有开启、关闭等按钮的固定窗口](https://leventureqys.github.io//2022/05/13/FrameLesstech/)
   
