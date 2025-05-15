@@ -47,17 +47,18 @@ menu:
 
 # Side info card
 card:
+    name: Leventure
     enable: true
     description: |
-        Description
-        ...
+        Average Audio & CV Developer
+        Television rule the nation.
     iconLinks:
     friendLinks:
-        Argvchs: https://argvchs.github.io
+        CN_Blog: https://blog.csdn.net/Andius?type=blog
 
 # Footer info
 footer:
-    since: 2022
+    since: 2025
     # Customize the server domain name ICP
     ICP:
         enable: false
@@ -79,7 +80,7 @@ highlight:
 
 # KaTeX math rendering
 math:
-    enable: false
+    enable: true
 
 # Image preview
 preview:
@@ -91,7 +92,7 @@ crypto:
 
 # Search
 search:
-    enable: false
+    enable: true
 
 # giscus
 # https://github.com/giscus/giscus
