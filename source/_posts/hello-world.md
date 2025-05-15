@@ -1,5 +1,7 @@
-# First Article
+# test
 
-Test for Markdown file.
+$ test = \sqrt{s} + s^2 + 1$
 
-$ y = x + x^2 + \sqrt{t}$
+$$
+x+1=x
+$$
