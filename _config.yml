@@ -3,17 +3,17 @@
 ## Source: https://github.com/hexojs/hexo/
 
 # Site
-title: Hexo
+title: 浮生暂寄梦中梦，世事如闻风里风🍂
 subtitle: ''
 description: ''
 keywords:
-author: John Doe
-language: en
+author: Huxley
+language: cn
 timezone: ''
 
 # URL
 ## Set your site url here. For example, if you use GitHub Page, set url as 'https://username.github.io/project'
-url: http://example.com
+url: https://leventureqys.github.io/
 permalink: :year/:month/:day/:title/
 permalink_defaults:
 pretty_urls:
