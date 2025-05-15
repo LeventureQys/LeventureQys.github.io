@@ -49,11 +49,10 @@ menu:
 card:
     enable: true
     description: |
-        Description
-        ...
+        一般通过 Audio & CV Developer
     iconLinks:
     friendLinks:
-        Argvchs: https://argvchs.github.io
+        Argvchs: https://leventureqys.github.io/
 
 # Footer info
 footer:
