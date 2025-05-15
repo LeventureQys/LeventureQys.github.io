@@ -16,6 +16,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Clean cache
+        run: |
+          npm cache clean --force
+          rm -rf node_modules
+          rm -f package-lock.json
       - name: Cache NPM dependencies
         uses: actions/cache@v4
         with:
@@ -30,7 +35,7 @@ jobs:
           npm install
           npm install -g hexo-cli --unsafe-perm
       - name: Build
-        run: npx hexo generate  # 或 npm run build（确保 package.json 已配置）
+        run: npx hexo generate
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
