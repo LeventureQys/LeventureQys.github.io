@@ -157,3 +157,5 @@ double C = 1 / std::tan(M_PI * center_freq / (double)PublicVar::ins().sample_rat
 ```
 
 修正后的双线性变换 $s = C·\frac{1-z^{-1}}{1+z^{-1}}$
+
+可以尝试一下
