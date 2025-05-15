@@ -3,7 +3,7 @@ name: Pages
 on:
   push:
     branches:
-      - main # default branch
+      - main
 
 jobs:
   build:
@@ -11,8 +11,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          # If your repository depends on submodule, please see: https://github.com/actions/checkout
           submodules: recursive
       - name: Use Node.js 20
         uses: actions/setup-node@v4
@@ -21,18 +19,23 @@ jobs:
       - name: Cache NPM dependencies
         uses: actions/cache@v4
         with:
-          path: node_modules
-          key: ${{ runner.OS }}-npm-cache
+          path: |
+            node_modules
+            package-lock.json
+          key: ${{ runner.OS }}-npm-${{ hashFiles('package-lock.json') }}
           restore-keys: |
-            ${{ runner.OS }}-npm-cache
+            ${{ runner.OS }}-npm-
       - name: Install Dependencies
-        run: npm install
+        run: |
+          npm install
+          npm install -g hexo-cli --unsafe-perm
       - name: Build
-        run: npm run build
+        run: npx hexo generate  # 或 npm run build（确保 package.json 已配置）
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./public
+          path: public/
+
   deploy:
     needs: build
     permissions:
