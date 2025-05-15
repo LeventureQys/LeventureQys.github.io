@@ -26,9 +26,11 @@ jobs:
           restore-keys: |
             ${{ runner.OS }}-npm-
       - name: Install Dependencies
-        run: npm install
+        run: |
+          npm install
+          npm install -g hexo-cli --unsafe-perm
       - name: Build
-        run: npx hexo generate  # 或 npm run build（如果 package.json 已修改）
+        run: npx hexo generate  # 或 npm run build（确保 package.json 已配置）
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
