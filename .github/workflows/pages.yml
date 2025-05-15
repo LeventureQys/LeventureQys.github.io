@@ -27,10 +27,12 @@ jobs:
             ${{ runner.OS }}-npm-
       - name: Install Dependencies
         run: |
-          npm install
-          npm install -g hexo-cli --unsafe-perm
+          npm uninstall hexo-renderer-marked --save  # 移除默认渲染器
+          npm install hexo-renderer-markdown-it markdown-it-katex --save  # 安装新渲染器 + KaTeX 插件
+          npm install  # 安装其他依赖
+          npm install -g hexo-cli --unsafe-perm  # 全局安装 Hexo CLI
       - name: Build
-        run: npx hexo generate  # 或 npm run build（确保 package.json 已配置）
+        run: npx hexo generate
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
