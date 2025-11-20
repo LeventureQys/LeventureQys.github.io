@@ -1,10 +1,10 @@
-# If your site is in 'https', then make sure your base url isn't written using 'http' otherwise your sitemap would
-# contain http (as opposeed to https) URLs. This would affect Google indexing of your URLs.
+# 修改这一行
 baseURL: "https://leventureqys.github.io/"
-title: PaperMod
-copyright: "© [PaperMod Contributors](https://github.com/adityatelange/hugo-PaperMod/graphs/contributors)"
+title: "你的站点名称"  # 修改为你自己的站点名称
+copyright: "© 你的名字"
 theme: [hugo-PaperMod]
 
+# 其他配置保持不变...
 enableInlineShortcodes: true
 enableRobotsTXT: true
 buildDrafts: false
@@ -12,16 +12,16 @@ buildFuture: false
 buildExpired: false
 enableEmoji: true
 pygmentsUseClasses: true
-mainsections: ["posts", "papermod"]
+mainsections: ["posts"]
 
 minify:
   disableXML: true
-  # minifyOutput: true
 
 pagination:
   disableAliases: false
   pagerSize: 5
 
+# 简化语言配置（先确保基本功能正常）
 languages:
   en:
     languageName: "English"
@@ -41,50 +41,24 @@ languages:
         - name: Tags
           url: tags/
           weight: 10
-        - name: WiKi
-          url: https://github.com/adityatelange/hugo-PaperMod/wiki/
 
-  fr:
-    languageName: ":fr:"
-    weight: 2
-    title: PaperModL2
-    taxonomies:
-      category: FRcategories
-      tag: FRtags
-      series: FRseries
-    menu:
-      main:
-        - name: Archive
-          url: archives/
-          weight: 5
-        - name: FRTags
-          url: frtags
-          weight: 10
-        - name: FRCategories
-          url: frcategories
-          weight: 10
-        - name: FRSeries
-          url: frseries
-          weight: 10
-        - name: NullLink
-          url: "#"
+params:
+  env: production
+  description: "你的站点描述"
+  author: "你的名字"
+  
+  defaultTheme: auto
+  ShowShareButtons: true
+  ShowReadingTime: true
+  ShowPostNavLinks: true
+  ShowBreadCrumbs: true
+  ShowCodeCopyButtons: true
+  ShowToc: true
 
-    # custom params for each language should be under [langcode].parms - hugo v0.120.0
-    params:
-      languageAltTitle: French
-      profileMode:
-        enabled: true
-        title: PaperMod
-        imageUrl: "https://raw.githubusercontent.com/googlefonts/noto-emoji/master/svg/emoji_u1f9d1_1f3fb_200d_1f4bb.svg"
-        imageTitle: ProfileMode image
-        # imageWidth: 120
-        # imageHeight: 120
-        subtitle: "☄️ Fast | ☁️ Fluent | 🌙 Smooth | 📱 Responsive"
-        buttons:
-          - name: Blog
-            url: posts
-          - name: Profile Mode
-            url: https://github.com/adityatelange/hugo-PaperMod/wiki/Features#profile-mode
+  homeInfoParams:
+    Title: "欢迎来到你的站点"
+    Content: >
+      这是你的个人博客/站点...
 
   fa:
     languagedirection: rtl
