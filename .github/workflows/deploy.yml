@@ -27,16 +27,19 @@ jobs:
           extended: true
 
       - name: Build
-        run: hugo --minify --verbose
+        run: hugo --minify  # 移除 --verbose 参数
+
+      - name: Show generated files
+        run: ls -la public/  # 添加这行来查看生成的文件
 
       - name: Create .nojekyll
         run: touch public/.nojekyll
 
       - name: Setup Pages
-        uses: actions/configure-pages@v4  # 升级到 v4
+        uses: actions/configure-pages@v4
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3  # 升级到 v3
+        uses: actions/upload-pages-artifact@v3
         with:
           path: ./public
 
@@ -49,4 +52,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4  # 升级到 v4
+        uses: actions/deploy-pages@v4
