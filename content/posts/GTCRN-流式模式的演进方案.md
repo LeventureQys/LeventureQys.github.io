@@ -1,13 +1,13 @@
-  ---
-  author: "Konpaku Youran"
-  title: "GTCRN 轻量化的流式方案的演进思路"
-  date: "2026-02-13"
-  description: "GTCRN-> GTCRN Light ->Causal Streaming GTCRN Light"
-  tags: ["算法", "机器学习","GTCRN"]
-  categories: ["音频算法"]
-  ShowToc: true        # 显示目录
-  TocOpen: true        # 默认展开目录
-  ---
+---
+author: "Konpaku Youran"
+title: "GTCRN 轻量化的流式方案的演进思路"
+date: "2026-02-13"
+description: "GTCRN-> GTCRN Light ->Causal Streaming GTCRN Light"
+tags: ["算法", "机器学习","GTCRN"]
+categories: ["音频算法"]
+ShowToc: true
+TocOpen: true
+---
 
 
 # GTCRN 演进路径
