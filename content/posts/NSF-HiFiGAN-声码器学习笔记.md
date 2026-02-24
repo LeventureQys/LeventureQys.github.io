@@ -1,0 +1,436 @@
+---
+author: "Konpaku Youran"
+title: "NSF-HiFiGAN-声码器学习笔记"
+date: "2026-02-14"
+description: "rvc "
+tags: ["自监督学习", "机器学习","RVC"]
+categories: ["音频算法"]
+ShowToc: true
+TocOpen: true
+---
+
+# 从 HiFi-GAN 到 NSF-HiFi-GAN：声码器学习笔记
+
+> 本文基于 RVC（Retrieval-based Voice Conversion）项目的实际代码，从零开始梳理 HiFi-GAN 声码器的原理，再过渡到 RVC 中真正使用的 NSF-HiFi-GAN 变体。
+> 代码位置：`infer/lib/infer_pack/models.py` 和 `infer/lib/infer_pack/modules.py`
+
+---
+
+## 一、先搞清楚声码器在干什么
+
+在语音合成或语音转换的流程里，声码器处在最后一环。它的上游会输出某种"中间表示"——可能是 mel 频谱图，也可能是某个隐空间的向量。声码器要做的事情就一件：**把这个中间表示变回可以听的音频波形**。
+
+说得直白点：频谱图是一张"图"，声码器要把这张图"念"出来。
+
+传统做法（Griffin-Lim 之类的）靠数学迭代来恢复相位信息，结果通常比较糊。HiFi-GAN 走的是神经网络的路线——用一个生成器直接输出波形采样点，同时用判别器来监督生成质量。
+
+---
+
+## 二、HiFi-GAN 的基本结构
+
+HiFi-GAN 的论文是 2020 年发的（Jungil Kong 等人），核心思路可以用一句话概括：
+
+> **转置卷积做上采样，残差块做波形精炼，多尺度判别器做质量监督。**
+
+### 2.1 生成器的整体流程
+
+在 RVC 的代码里，标准 HiFi-GAN 生成器对应的是 `Generator` 类（`models.py:204`）。它的结构其实很规整：
+
+```
+输入（隐变量 z，通道数 192）
+  │
+  ▼
+conv_pre: Conv1d(192 → 512, kernel=7)    ← 把输入投射到高维空间
+  │
+  ▼
+┌─ 上采样阶段 1: ConvTranspose1d(512 → 256, stride=10)  ← 时间轴拉长 10 倍
+│   └─ 3 个 ResBlock 并行处理，输出取平均
+├─ 上采样阶段 2: ConvTranspose1d(256 → 128, stride=10)  ← 再拉长 10 倍
+│   └─ 3 个 ResBlock 并行处理，输出取平均
+├─ 上采样阶段 3: ConvTranspose1d(128 → 64, stride=2)    ← 拉长 2 倍
+│   └─ 3 个 ResBlock 并行处理，输出取平均
+└─ 上采样阶段 4: ConvTranspose1d(64 → 32, stride=2)     ← 拉长 2 倍
+    └─ 3 个 ResBlock 并行处理，输出取平均
+  │
+  ▼
+conv_post: Conv1d(32 → 1, kernel=7)    ← 压到单通道
+  │
+  ▼
+tanh → 输出波形（范围 [-1, 1]）
+```
+
+上采样的总倍率 = 10 × 10 × 2 × 2 = **400**。这个数字等于 hop_length（帧移），含义是：输入的每一帧对应输出的 400 个采样点。对于 40kHz 采样率来说，一帧就是 10ms。
+
+有两件事值得注意：
+
+1. **通道数逐级减半**：512 → 256 → 128 → 64 → 32。分辨率在增加，通道数在减少，这跟图像领域的解码器思路一致。
+2. **每个上采样阶段之后都跟着一组 ResBlock**，而不是只放一个。这组 ResBlock 就是 HiFi-GAN 最核心的设计之一——MRF。
+
+### 2.2 MRF：多感受野融合
+
+MRF 的全称是 Multi-Receptive Field Fusion。思路也很朴素：**用不同大小的卷积核去观察不同范围的上下文，然后把结果加起来取平均**。
+
+在 RVC 的配置（`configs/v1/40k.json`）里，resblock_kernel_sizes 是 `[3, 7, 11]`，所以每个上采样阶段后面并排放了 3 个 ResBlock，分别用 kernel_size=3、7、11。
+
+代码里这段逻辑很清楚（`models.py:270-276`）：
+
+```python
+for i in range(self.num_upsamples):
+    x = F.leaky_relu(x, LRELU_SLOPE)
+    x = self.ups[i](x)
+    xs = None
+    for j in range(self.num_kernels):          # num_kernels = 3
+        if xs is None:
+            xs = self.resblocks[i * self.num_kernels + j](x)
+        else:
+            xs += self.resblocks[i * self.num_kernels + j](x)
+    x = xs / self.num_kernels                   # 取平均
+```
+
+小 kernel（3）看局部细节，大 kernel（11）看更长的上下文。融合后既保留了细节纹理，也保持了长距离的连贯性。
+
+### 2.3 ResBlock：膨胀卷积的堆叠
+
+RVC 默认用的是 `ResBlock1`（`modules.py:252`），它的内部结构是：
+
+```
+x ──→ LeakyReLU → DilatedConv(d=1) → LeakyReLU → Conv(d=1) → + x  ─┐
+      LeakyReLU → DilatedConv(d=3) → LeakyReLU → Conv(d=1) → + x  ─┤
+      LeakyReLU → DilatedConv(d=5) → LeakyReLU → Conv(d=1) → + x  ─┘
+```
+
+三轮串行处理，每轮的膨胀率（dilation）分别是 1、3、5。膨胀率越大，同样的 kernel_size 能看到越远的位置。以 kernel_size=3 为例：
+- dilation=1 时感受野是 3
+- dilation=3 时感受野是 7
+- dilation=5 时感受野是 11
+
+这样一个 ResBlock 内部就覆盖了多种尺度。再加上 MRF 层面的多 kernel 并行，HiFi-GAN 等于在"感受野"这件事上下了双重功夫。
+
+每一层卷积都用了 `weight_norm`——这是 HiFi-GAN 的另一个特点，用权重归一化代替 BatchNorm，生成质量更稳定。
+
+还有一种更轻量的 `ResBlock2`（`modules.py:367`），只有两轮、每轮只有一层膨胀卷积。配置文件里 `"resblock": "1"` 表示用 ResBlock1，设成 `"2"` 就用 ResBlock2。RVC 默认用的是 1。
+
+### 2.4 判别器（训练用）
+
+生成器只管"生成"，判别器负责"挑毛病"。HiFi-GAN 用了两种判别器组合：
+
+**Multi-Period Discriminator（MPD）**：把一维波形按不同周期（2, 3, 5, 7, 11, 17）折叠成二维，然后用 2D 卷积判别。不同的周期能捕获不同频率成分的规律性。
+
+**Multi-Scale Discriminator（MSD）**：在原始波形和降采样后的波形上分别做判别，关注不同时间尺度的真实感。
+
+在 RVC 代码里，这两者合并成了 `MultiPeriodDiscriminator`（`models.py:1052`），里面同时包含了一个 `DiscriminatorS`（MSD 的角色）和多个 `DiscriminatorP`（MPD 的角色）。
+
+判别器在推理阶段不参与，但训练阶段是不可缺的。
+
+### 2.5 小结：标准 HiFi-GAN 的特点
+
+- 生成速度快（全卷积，没有自回归）
+- 音质好（GAN 训练 + 多尺度判别）
+- 结构简洁（上采样 + ResBlock + 判别器，没有过于复杂的组件）
+
+但它有一个问题：**对音高（F0）的控制是隐式的**。生成器只接收中间表示，音高信息完全靠网络自己从数据中学习。对于语音转换这种需要精确控制音高的任务来说，这还不够。
+
+---
+
+## 三、NSF-HiFi-GAN：加入显式的音高控制
+
+NSF 的全称是 Neural Source-Filter。这个名字来自语音学中经典的"源-滤波器"模型：
+
+> 人类的发声可以分解为两个部分：声带振动产生的**源信号**（周期性的脉冲），和声道共振形成的**滤波器**（塑造音色）。
+
+NSF-HiFi-GAN 做的事情就是把这个物理直觉引入神经网络：用 F0 生成一个显式的周期性源信号，注入到 HiFi-GAN 的生成过程中。这样网络就不用"猜"音高了，音高由输入直接决定。
+
+RVC 中的 NSF-HiFi-GAN 对应 `GeneratorNSF` 类（`models.py:448`）。
+
+### 3.1 生成源信号：SineGen 和 SourceModuleHnNSF
+
+源信号的生成分两步。
+
+**第一步：SineGen（正弦波生成器，`models.py:312`）**
+
+SineGen 的输入是 F0 序列，输出是对应频率的正弦波。
+
+核心逻辑在 `_f02sine()` 方法里：
+1. 把 F0（单位 Hz）除以采样率，得到每个采样点的相位增量
+2. 通过 `cumsum`（累积求和）得到连续的相位序列
+3. 取 `sin(2π × phase)` 得到正弦波
+
+为什么要用 cumsum 而不是直接算 `sin(2π × f0 × t)`？因为 F0 在时间轴上是变化的。如果每帧独立计算，帧与帧之间的相位会不连续，产生"咔哒"声。cumsum 保证了相位的连续累积。
+
+另外，SineGen 区分了浊音和清音：
+- **浊音段**（F0 > 0）：输出正弦波 + 微量噪声（std=0.003）
+- **清音段**（F0 = 0）：输出纯噪声（幅度 = sine_amp / 3）
+
+```python
+# models.py:385-387
+noise_amp = uv * self.noise_std + (1 - uv) * self.sine_amp / 3
+noise = noise_amp * torch.randn_like(sine_waves)
+sine_waves = sine_waves * uv + noise
+```
+
+这背后的物理含义是：浊音由声带周期性振动产生（正弦波建模），清音由气流的湍流产生（噪声建模）。
+
+SineGen 还支持泛音（harmonics），不过 RVC 里 `harmonic_num=0`，所以只生成基频，没有泛音。
+
+**第二步：SourceModuleHnNSF（源模块，`models.py:391`）**
+
+这一层包装了 SineGen，做了两件事：
+1. 调用 SineGen 得到正弦波（可能包含多个谐波通道）
+2. 用一个 `Linear(harmonic_num + 1, 1)` 层把多个谐波混合成单通道信号，再过 `Tanh` 限幅
+
+在 RVC 的默认配置下只有基频（harmonic_num=0），所以这个 Linear 层实际上就是一个标量缩放。但设计上保留了扩展性——如果以后想加泛音，只需要改一个参数。
+
+### 3.2 谐波注入：GeneratorNSF 的关键改动
+
+`GeneratorNSF` 和标准 `Generator` 的骨架几乎一样——相同的上采样层，相同的 ResBlock，相同的 conv_pre/conv_post。关键区别在于多了一套 `noise_convs`，用于在每个上采样阶段注入源信号。
+
+整个前向过程是这样的：
+
+```python
+# 1. 生成源信号（波形采样率的分辨率）
+har_source, _, _ = self.m_source(f0, self.upp)  # [batch, T*400, 1]
+har_source = har_source.transpose(1, 2)          # [batch, 1, T*400]
+
+# 2. 隐变量过 conv_pre
+x = self.conv_pre(x)          # [batch, 512, T]
+
+# 3. 逐级上采样 + 注入源信号 + ResBlock 精炼
+for i, (ups, noise_convs) in enumerate(zip(self.ups, self.noise_convs)):
+    x = F.leaky_relu(x, 0.1)
+    x = ups(x)                # 上采样：时间轴拉长
+    x_source = noise_convs(har_source)  # 把源信号降采样到当前分辨率
+    x = x + x_source          # ★ 注入！
+    # ... 后面是跟标准 HiFi-GAN 一样的 MRF 处理
+
+# 4. conv_post + tanh
+x = self.conv_post(x)
+x = torch.tanh(x)
+```
+
+这里有个细节很关键：**源信号（har_source）始终保持在最终输出的采样率上**（比如 40000 个采样点/秒），而上采样过程中的 `x` 的时间分辨率是逐级增加的。所以每个阶段的 `noise_convs` 需要把全分辨率的源信号**下采样**到当前阶段的分辨率。
+
+具体来说，`noise_convs` 的 stride 等于"当前阶段之后还需要上采样的总倍率"：
+
+```python
+# models.py:490-502
+if i + 1 < len(upsample_rates):
+    stride_f0 = math.prod(upsample_rates[i + 1:])
+    self.noise_convs.append(
+        Conv1d(1, c_cur, kernel_size=stride_f0 * 2, stride=stride_f0, ...)
+    )
+else:
+    self.noise_convs.append(Conv1d(1, c_cur, kernel_size=1))
+```
+
+以 40kHz 配置（upsample_rates = [10, 10, 2, 2]）为例：
+
+| 上采样阶段 | 上采样倍率 | x 的时间分辨率 | noise_conv 的 stride | 含义 |
+|-----------|----------|--------------|---------------------|------|
+| 0 | ×10 | T×10 | 10×2×2 = 40 | 源信号每 40 个点取 1 个 |
+| 1 | ×10 | T×100 | 2×2 = 4 | 源信号每 4 个点取 1 个 |
+| 2 | ×2 | T×200 | 2 | 源信号每 2 个点取 1 个 |
+| 3 | ×2 | T×400 | 1 (kernel=1) | 源信号直接用 |
+
+注意：noise_conv 不只是简单的下采样，它同时把 1 通道扩展到了 c_cur 通道（256 / 128 / 64 / 32），这样才能跟 `x` 直接相加。这个卷积的参数是可学习的，网络可以自己决定怎么利用源信号的信息。
+
+### 3.3 用一张图看全貌
+
+把上面的内容组合起来，GeneratorNSF 在 40kHz 配置下的完整数据流是：
+
+```
+F0 [batch, T]
+  │
+  ├── Upsample(×400) ──→ SourceModuleHnNSF ──→ har_source [batch, 1, T×400]
+  │                                                │
+  │                    ┌───────────────────────────┤（全程保持最高分辨率）
+  │                    │                           │
+z [batch, 192, T]      │                           │
+  │                    │                           │
+  ▼                    │                           │
+conv_pre(192→512)      │                           │
+  │                    │                           │
+  ▼                    ▼                           │
+Stage 0: ×10上采样   noise_conv(stride=40)         │
+  [512→256]            [1→256]                     │
+  x = x + x_source ◄──┘                           │
+  → MRF(3 ResBlocks, k=3/7/11)                    │
+  │                                                │
+  ▼                                                ▼
+Stage 1: ×10上采样                     noise_conv(stride=4)
+  [256→128]                              [1→128]
+  x = x + x_source ◄────────────────────┘
+  → MRF(3 ResBlocks, k=3/7/11)
+  │
+  ▼
+Stage 2: ×2上采样                      noise_conv(stride=2)
+  [128→64]                               [1→64]
+  x = x + x_source ◄────────────────────┘
+  → MRF(3 ResBlocks, k=3/7/11)
+  │
+  ▼
+Stage 3: ×2上采样                      noise_conv(stride=1)
+  [64→32]                                [1→32]
+  x = x + x_source ◄────────────────────┘
+  → MRF(3 ResBlocks, k=3/7/11)
+  │
+  ▼
+conv_post(32→1) → tanh → 输出波形 [batch, 1, T×400]
+```
+
+### 3.4 说话人条件（gin_channels）
+
+RVC 还支持多说话人。`GeneratorNSF` 里有一个可选的 `self.cond` 层：
+
+```python
+if gin_channels != 0:
+    self.cond = nn.Conv1d(gin_channels, upsample_initial_channel, 1)
+```
+
+在前向传播中，说话人嵌入 `g` 通过这个 1×1 卷积映射到与 conv_pre 输出相同的维度，然后直接加上去：
+
+```python
+x = self.conv_pre(x)
+if g is not None:
+    x = x + self.cond(g)
+```
+
+这意味着说话人信息在最开始就注入了，后续所有上采样和 ResBlock 处理都是在"带有说话人特征"的基础上进行的。
+
+---
+
+## 四、GeneratorNSF 在 RVC 系统中的位置
+
+声码器不是孤立存在的。在 RVC 里，它被嵌入到一个完整的 VITS 风格的框架中。以 `SynthesizerTrnMs256NSFsid`（`models.py:602`）为例：
+
+```
+完整的推理流程：
+
+phone（语音特征，256 维）   pitch（音高序号）   sid（说话人 ID）
+        │                        │                  │
+        ▼                        ▼                  ▼
+      TextEncoder ──────────────────────────→ (μ, σ)    emb_g → g
+        │                                                │
+        ▼                                                │
+    采样 z_p ~ N(μ, σ)                                   │
+        │                                                │
+        ▼                                                │
+    ResidualCouplingBlock (flow, reverse=True)  ◄────── g
+        │
+        ▼
+      z（隐变量）
+        │
+        ▼                F0（连续的基频值 nsff0）
+    GeneratorNSF(z, f0, g) ◄─────────────────┘
+        │
+        ▼
+    输出波形
+```
+
+- **TextEncoder**：把 phone 特征（+ pitch 嵌入）编码成高斯分布的均值和方差
+- **ResidualCouplingBlock**：一个 normalizing flow 模块，在推理时做逆变换，把先验分布的采样转换到隐空间
+- **GeneratorNSF**：我们分析的声码器，接收 flow 输出的隐变量 `z` 和连续的 F0 值 `nsff0`，生成最终波形
+
+训练时还有一个 **PosteriorEncoder**，它直接从 mel 频谱编码出后验分布，用于计算 KL 散度 loss，推理时不用。
+
+RVC 提供了四种合成器变体：
+
+| 类名 | phone 维度 | 是否使用 F0 | 解码器 |
+|------|-----------|-----------|--------|
+| `SynthesizerTrnMs256NSFsid` | 256 | 是 | GeneratorNSF |
+| `SynthesizerTrnMs768NSFsid` | 768 | 是 | GeneratorNSF |
+| `SynthesizerTrnMs256NSFsid_nono` | 256 | 否 | Generator（标准） |
+| `SynthesizerTrnMs768NSFsid_nono` | 768 | 否 | Generator（标准） |
+
+256 和 768 的区别在于上游特征提取器的输出维度（256 对应 HuBERT base，768 对应 HuBERT large 等）。
+
+带 "nono" 后缀的版本不使用 F0，也就不需要 NSF——它们直接用标准的 HiFi-GAN Generator。这种模式音高控制差一些，但不需要提取 F0，适合对音高没有严格要求的场景。
+
+---
+
+## 五、不同采样率下的配置对比
+
+RVC 支持 32kHz、40kHz、48kHz 三种采样率，对应不同的声码器配置：
+
+| 参数 | 32kHz | 40kHz | 48kHz |
+|------|-------|-------|-------|
+| hop_length | 320 | 400 | 480 |
+| upsample_rates | [10,4,2,2,2] | [10,10,2,2] | [10,6,2,2,2] |
+| 上采样总倍率 | 320 | 400 | 480 |
+| upsample_kernel_sizes | [16,16,4,4,4] | [16,16,4,4] | [16,16,4,4,4] |
+| n_mel_channels | 80 | 125 | 128 |
+| 上采样阶段数 | 5 | 4 | 5 |
+| upsample_initial_channel | 512 | 512 | 512 |
+
+有一个规律：**上采样总倍率 = hop_length**。这是因为声码器的输入是帧级别的（每帧对应 hop_length 个采样点），输出是采样点级别的，正好需要拉长 hop_length 倍。
+
+32kHz 和 48kHz 用了 5 级上采样（多了一级 ×4 或 ×6），而 40kHz 只用 4 级（两个 ×10）。级数多意味着更细粒度的逐步还原，但也意味着更多的参数和计算量。
+
+---
+
+## 六、代码中值得注意的实现细节
+
+### 6.1 weight_norm 而不是 batch_norm
+
+HiFi-GAN 全程使用 weight normalization。相比 batch norm，weight norm 不依赖 batch 统计量，在生成任务中表现更稳定。推理时可以通过 `remove_weight_norm()` 去掉，减少计算开销。
+
+### 6.2 LeakyReLU 的斜率
+
+整个项目里 LeakyReLU 的负半轴斜率统一是 0.1（`modules.py:17: LRELU_SLOPE = 0.1`）。这个值在 HiFi-GAN 原论文里就是这么设的，基本是业界默认。
+
+### 6.3 转置卷积的 padding 计算
+
+上采样用的 `ConvTranspose1d` 的 padding 是 `(kernel_size - stride) // 2`。这个公式保证输出长度恰好是输入长度 × stride，不会多出或少掉采样点。
+
+### 6.4 SineGen 中的相位连续性处理
+
+`_f02sine()` 方法里这段代码比较绕：
+
+```python
+rad2 = torch.fmod(rad[:, :-1, -1:].float() + 0.5, 1.0) - 0.5
+rad_acc = rad2.cumsum(dim=1).fmod(1.0).to(f0)
+rad += F.pad(rad_acc, (0, 0, 1, 0), mode='constant')
+```
+
+它在做的事情是：取每帧最后一个采样点的相位增量，累积到下一帧的起始相位上，保证帧间相位连续。`fmod(...) + 0.5 - 0.5` 这种写法是为了把相位差限制在 [-0.5, 0.5) 范围内，避免数值累积过大导致精度丢失。
+
+### 6.5 torch.jit.script 的兼容处理
+
+代码里有不少 `__prepare_scriptable__` 方法和类型标注（`Optional[torch.Tensor]`）。这是为了兼容 TorchScript 编译——RVC 支持把模型导出为 TorchScript 格式以提升推理性能。`@torch.jit.ignore` 标记训练用的 forward，`@torch.jit.export` 标记推理用的 infer。
+
+---
+
+## 七、回顾：为什么 RVC 选择 NSF-HiFi-GAN
+
+把标准 HiFi-GAN 和 NSF 变体放在一起看，关键差异只有一处：**有没有把 F0 信息显式注入生成过程**。
+
+对于 TTS（文本转语音）来说，标准 HiFi-GAN 就够了——因为 TTS 的上游模型（比如 FastSpeech）已经把音高信息编码进了 mel 频谱，声码器只需要忠实还原。
+
+但 RVC 做的是**变声**。它需要把一个人的声音转换成另一个人的声音，同时允许用户手动调整音高。如果声码器不知道目标音高是多少，它就只能从隐变量里"猜"，结果往往是音高不稳、出现抖动甚至跑调。
+
+NSF-HiFi-GAN 通过正弦波信号把 F0 "告诉"了生成器的每一层。网络不再需要自己发明轮子来建模周期性——正弦波已经提供了准确的周期结构，网络只需要在此基础上"雕刻"出正确的音色和细节。
+
+这种设计的代价很小（多了一个 SineGen + 几个 1D 卷积），但带来的音高稳定性提升是显著的。
+
+---
+
+## 附录 A：关键类速查表
+
+| 类名 | 文件位置 | 作用 |
+|------|---------|------|
+| `SineGen` | models.py:312 | 根据 F0 生成正弦波 |
+| `SourceModuleHnNSF` | models.py:391 | 将多个谐波正弦波合并为单通道激励信号 |
+| `Generator` | models.py:204 | 标准 HiFi-GAN 生成器（无 F0 输入） |
+| `GeneratorNSF` | models.py:448 | NSF 增强的 HiFi-GAN 生成器（有 F0 输入） |
+| `ResBlock1` | modules.py:252 | 3 轮膨胀残差块（dilation=1,3,5） |
+| `ResBlock2` | modules.py:367 | 2 轮膨胀残差块（dilation=1,3） |
+| `MultiPeriodDiscriminator` | models.py:1052 | 训练用判别器（MPD + MSD） |
+| `SynthesizerTrnMs256NSFsid` | models.py:602 | 完整合成器（256维，带 F0） |
+| `SynthesizerTrnMs768NSFsid` | models.py:779 | 完整合成器（768维，带 F0） |
+| `SynthesizerTrnMs256NSFsid_nono` | models.py:836 | 完整合成器（256维，不带 F0） |
+| `SynthesizerTrnMs768NSFsid_nono` | models.py:994 | 完整合成器（768维，不带 F0） |
+
+## 附录 B：进一步阅读
+
+- HiFi-GAN 原论文：*HiFi-GAN: Generative Adversarial Networks for Efficient and High Fidelity Speech Synthesis* (Kong et al., 2020)
+- NSF 原论文：*Neural Source-Filter Waveform Models for Statistical Parametric Speech Synthesis* (Wang et al., 2019)
+- VITS 论文（RVC 整体框架的基础）：*Conditional Variational Autoencoder with Adversarial Learning for End-to-End Text-to-Speech* (Kim et al., 2021)
