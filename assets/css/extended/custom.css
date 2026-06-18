@@ -1,17 +1,16 @@
-/* Custom styles added to demo */
-
-.twitter-tweet {
-    margin: auto;
+:root {
+    --main-width: 90%;
+    --nav-width: 95%;
 }
 
-iframe {
-    border-radius: var(--radius) !important;
+.post-content pre,
+.post-content code {
+    max-width: 100%;
+    overflow-x: auto;
 }
 
-.home-info ul {
-    padding-inline-start: 20px;
+/* 防止超宽屏下内容过散，最大 1200px */
+.main {
+    max-width: 1200px;
 }
 
-.entry-cover img {
-    border: 1px solid var(--border);
-}
