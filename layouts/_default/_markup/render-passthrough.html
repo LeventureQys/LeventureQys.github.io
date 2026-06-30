@@ -1,0 +1,5 @@
+{{- if eq .Type "block" -}}
+$${{ .Inner | safeHTML }}$$
+{{- else -}}
+${{ .Inner | safeHTML }}$
+{{- end -}}
