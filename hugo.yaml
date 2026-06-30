@@ -60,17 +60,5 @@ menu:
 
 markup:
   goldmark:
-    extensions:
-      passthrough:
-        enable: true
-        delimiters:
-          block:
-            - - \[
-              - \]
-            - - $$
-              - $$
-          inline:
-            - - \(
-              - \)
     renderer:
       unsafe: true
