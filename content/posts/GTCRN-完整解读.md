@@ -8,6 +8,7 @@ categories: ["音频算法"]
 series: ["GTCRN"]
 ShowToc: true
 TocOpen: true
+math: true
 ---
 # GTCRN：一个 23.7K 参数语音降噪网络的设计思路完整解读
 

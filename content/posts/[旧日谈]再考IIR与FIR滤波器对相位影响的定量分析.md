@@ -4,11 +4,11 @@ title: "[旧日谈] 再考 IIR 与 FIR 滤波器对相位影响的定量分析"
 date: "2026-06-18"
 description: "基于48kHz二阶巴特沃斯高通的完整推导，定量分析FIR线性相位与IIR非线性相位的差异，以及预振铃、群延迟、实时性等工程权衡"
 tags: ["音频", "信号处理", "滤波器", "DSP"]
+math: true
 categories: ["音频算法"]
 series: ["旧日谈"]
 ShowToc: true
 TocOpen: true
-math: true
 sticky: true
 ---
 
@@ -1327,3 +1327,4 @@ plt.show()
 - Oppenheim, A. V., & Schafer, R. W. *Discrete-Time Signal Processing*
 - Proakis, J. G., & Manolakis, D. G. *Digital Signal Processing*
 - [SciPy Signal Processing 文档](https://docs.scipy.org/doc/scipy/reference/signal.html)
+
