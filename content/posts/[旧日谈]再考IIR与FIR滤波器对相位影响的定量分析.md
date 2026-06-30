@@ -1105,8 +1105,12 @@ iir_hp_b, iir_hp_a = signal.butter(4, 2000, btype='high', fs=48000)
 
 Linkwitz-Riley 滤波器的设计保证了两通道输出**始终同相叠加为全通函数**：
 
-$$|H_{LP}(\omega)|^2 + |H_{HP}(\omega)|^2 = 1 \quad \text{(功率互补)}$$
-$$H_{LP}(\omega) + H_{HP}(\omega) = e^{-j\phi_{AP}(\omega)} \quad \text{(全通和)}$$
+$$
+\begin{aligned}
+|H_{LP}(\omega)|^2 + |H_{HP}(\omega)|^2 &= 1 \quad \text{(功率互补)} \\
+H_{LP}(\omega) + H_{HP}(\omega) &= e^{-j\phi_{AP}(\omega)} \quad \text{(全通和)}
+\end{aligned}
+$$
 
 这意味着：
 1. 两通道的群延迟在通带内**完全一致**（因为是同一个全通函数的相位导数）
