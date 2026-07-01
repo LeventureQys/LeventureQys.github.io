@@ -9,6 +9,30 @@
     overflow-x: auto;
 }
 
+.post-content .math-display {
+    display: block;
+    margin: 1.25rem 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.post-content .math-display .katex-display {
+    margin: 0;
+    padding: 0.2rem 0;
+}
+
+.post-content .math-inline .katex {
+    font-size: 1em;
+}
+
+.post-content .math-display .katex {
+    font-size: 1.04em;
+}
+
+.post-content .math-display .base {
+    white-space: nowrap;
+}
+
 /* 防止超宽屏下内容过散，最大 1200px */
 .main {
     max-width: 1200px;

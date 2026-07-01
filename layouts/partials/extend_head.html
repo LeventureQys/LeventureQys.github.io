@@ -1,14 +1,47 @@
 {{ if .Params.math }}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz7pRu3UYLJdpWMw5M28GBpjYLFRQWigIzfcPI3uRo" crossorigin="anonymous">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"
-    onload="renderMathInElement(document.body, {
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    if (typeof renderMathInElement !== 'function') {
+      return;
+    }
+
+    var mathBlocks = document.querySelectorAll('.math.math-display');
+    for (var i = 0; i < mathBlocks.length; i++) {
+      var block = mathBlocks[i];
+      var source = block.textContent.trim();
+
+      if (source.slice(0, 2) !== '$$' || source.slice(-2) !== '$$') {
+        continue;
+      }
+
+      var inner = source.slice(2, -2).trim();
+      var hasEnvironment = /\\begin\{[a-zA-Z*]+\}/.test(inner);
+      var hasLineBreak = inner.indexOf('\\\\') !== -1;
+
+      if (hasLineBreak && !hasEnvironment) {
+        var wrapper = inner.indexOf('&') !== -1 ? 'aligned' : 'gathered';
+        block.textContent = '$$\n\\begin{' + wrapper + '}\n' + inner + '\n\\end{' + wrapper + '}\n$$';
+      }
+    }
+
+    var mathNodes = document.querySelectorAll('.math');
+    for (var j = 0; j < mathNodes.length; j++) {
+      renderMathInElement(mathNodes[j], {
         delimiters: [
-            {left: '$$', right: '$$', display: true},
-            {left: '$', right: '$', display: false},
-            {left: '\\(', right: '\\)', display: false},
-            {left: '\\[', right: '\\]', display: true}
+          {left: '$$', right: '$$', display: true},
+          {left: '$', right: '$', display: false},
+          {left: '\\(', right: '\\)', display: false},
+          {left: '\\[', right: '\\]', display: true}
         ],
-        throwOnError: false
-    });"></script>
+        ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+        ignoredClasses: ['highlight', 'chroma'],
+        throwOnError: false,
+        strict: 'ignore'
+      });
+    }
+  });
+</script>
 {{ end }}
