@@ -5,6 +5,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 permissions:
   contents: read
   pages: write
@@ -27,10 +31,7 @@ jobs:
           extended: true
 
       - name: Build
-        run: hugo --minify  # 移除 --verbose 参数
-
-      - name: Show generated files
-        run: ls -la public/  # 添加这行来查看生成的文件
+        run: hugo --minify
 
       - name: Create .nojekyll
         run: touch public/.nojekyll
@@ -49,7 +50,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          timeout: 1200000
