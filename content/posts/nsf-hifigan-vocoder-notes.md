@@ -2,6 +2,7 @@
 author: "Konpaku Youran"
 title: "NSF-HiFiGAN-声码器学习笔记"
 date: "2026-02-14"
+slug: nsf-hifigan-vocoder-notes
 description: "rvc "
 tags: ["自监督学习", "机器学习","RVC"]
 categories: ["音频算法"]

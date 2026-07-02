@@ -3,6 +3,7 @@
 author: "Konpaku Youran"
 title: "rvc结构简介"
 date: "2026-02-14"
+slug: rvc-structure-introduction
 description: "rvc "
 tags: ["自监督学习", "机器学习","GTCRN"]
 categories: ["音频算法"]

@@ -2,6 +2,7 @@
 author: "Leventure"
 title: "PPG 情绪识别：几条路线的取舍与实测"
 date: "2026-06-18"
+slug: ppg-emotion-recognition-paths-comparison
 description: "从 XGBoost 基线到 EMCNN，在 WESAD LOSO 实测下对比三条 PPG 情绪识别路线，附推理性能与资源开销分析"
 tags: ["PPG", "情绪识别", "机器学习", "CNN", "XGBoost", "嵌入式"]
 categories: ["机器学习"]

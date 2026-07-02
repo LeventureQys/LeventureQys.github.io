@@ -2,6 +2,7 @@
 author: "Leventure"
 title: "GTCRN 演进路径：v4 → v5 → 落地"
 date: "2026-06-18"
+slug: gtcrn-evolution-v4-to-v5
 description: "从 464KB 到 412KB，记录 GTCRN 模型在架构精简、质量优化、极限压缩、嵌入式 C 部署全过程的踩坑与经验"
 tags: ["GTCRN", "模型优化", "嵌入式", "C", "DSP", "噪声抑制"]
 categories: ["音频算法"]

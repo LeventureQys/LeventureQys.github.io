@@ -2,6 +2,7 @@
 author: "Leventure"
 title: "[RL] 强化学习指导搭建 IC2E 核反应堆"
 date: "2026-06-18"
+slug: rl-guide-ic2e-reactor
 description: "使用强化学习训练神经网络自动化设计 IC2 Experiment 版核电站布局，从任务建模到网络训练全流程"
 tags: ["强化学习", "Minecraft", "IC2", "AI"]
 categories: ["技术杂谈"]

@@ -2,6 +2,7 @@
 author: "Leventure"
 title: "要团结"
 date: "2026-06-18"
+slug: stay-united
 description: "关于悲伤、愤怒与团结的一点随想。"
 tags: ["随笔"]
 categories: ["杂谈"]

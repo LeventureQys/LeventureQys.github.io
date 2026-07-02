@@ -2,6 +2,7 @@
 author: "Leventure"
 title: "[旧日谈] 再考 IIR 与 FIR 滤波器对相位影响的定量分析"
 date: "2026-06-18"
+slug: rethinking-iir-fir-filter-phase-impact
 description: "基于48kHz二阶巴特沃斯高通的完整推导，定量分析FIR线性相位与IIR非线性相位的差异，以及预振铃、群延迟、实时性等工程权衡"
 tags: ["音频", "信号处理", "滤波器", "DSP"]
 math: true

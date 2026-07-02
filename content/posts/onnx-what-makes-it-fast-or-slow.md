@@ -2,6 +2,7 @@
 author: "Konpaku Youran"
 title: "ONNX - 它到底快在哪，又慢在哪"
 date: "2026-03-13"
+slug: onnx-what-makes-it-fast-or-slow
 description: "ONNX - 它到底快在哪，又慢在哪"
 tags: ["算法", "机器学习","ONNX"]
 categories: ["机器学习"]

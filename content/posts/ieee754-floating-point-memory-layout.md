@@ -2,6 +2,7 @@
 author: "Leventure"
 title: "浮点数的 IEEE 754 标准与内存表达"
 date: "2026-06-18"
+slug: ieee754-floating-point-memory-layout
 description: "深入解析 IEEE 754 标准下 float 与 double 的内存布局、精度量化分析及嵌入式开发中的取舍策略"
 tags: ["嵌入式", "浮点数", "IEEE754", "C/C++"]
 categories: ["系统底层"]

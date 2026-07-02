@@ -2,6 +2,7 @@
 author: "Leventure"
 title: "带噪信号的趋势分析方法"
 date: "2026-06-18"
+slug: signal-denoising-methods-comparison
 description: "对比卡尔曼滤波、Holt-Winters、高斯平滑、Butterworth、Savitzky-Golay 等方法的降噪效果，附完整代码与可视化仪表盘"
 tags: ["信号处理", "降噪", "DSP", "滤波", "卡尔曼滤波"]
 math: true

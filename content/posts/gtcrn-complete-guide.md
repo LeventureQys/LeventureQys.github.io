@@ -2,6 +2,7 @@
 author: "Leventure"
 title: "GTCRN：一个 23.7K 参数语音降噪网络的设计思路完整解读"
 date: "2026-06-30"
+slug: gtcrn-complete-guide
 description: "从零讲起：背景、骨架、模块、训练、部署、设计哲学——全面解读 GTCRN 这个仅 23.7K 参数却性能强悍的语音降噪网络。"
 tags: ["GTCRN", "语音降噪", "模型设计", "深度学习", "ICASSP"]
 categories: ["音频算法"]

@@ -2,6 +2,7 @@
 author: "Konpaku Youran"
 title: "GTCRN轻量化方案"
 date: "2026-02-13"
+slug: gtcrn-lightweight-scheme
 description: "GTCRN-> GTCRN Light "
 tags: ["算法", "机器学习","GTCRN"]
 categories: ["音频算法"]
