@@ -1,60 +1,59 @@
-# hugo-paperMod Example
+# LeventureTecTips
 
-This repository offers an example site for [hugo-PaperMod](https://github.com/adityatelange/hugo-PaperMod)
+Leventure 的个人技术博客，基于 [Hugo](https://gohugo.io/) + [PaperMod](https://github.com/adityatelange/hugo-PaperMod) 构建，部署在 GitHub Pages。
 
-## Install
+站点地址：<https://leventureqys.github.io>
 
-Read Wiki => [hugo-PaperMod - Installation](https://github.com/adityatelange/hugo-PaperMod/wiki/Installation)
-
-## Directory Tree
+## 目录结构
 
 ```
-.(site root)
-├── configTaxo.yml
-├── config.yml
-├── content
-│   ├── archives.fr.md
-│   ├── archives.md
-│   ├── posts
-│   │   ├── emoji-support.md
-│   │   ├── markdown-syntax.fa.md
-│   │   ├── markdown-syntax.fr.md
-│   │   ├── markdown-syntax.md
-│   │   ├── math-typesetting.md
-│   │   ├── papermod
-│   │   │   ├── _index.md
-│   │   │   ├── papermod-faq.md
-│   │   │   ├── papermod-features
-│   │   │   │   ├── images
-│   │   │   │   │   ├── homeinfo.jpg
-│   │   │   │   │   ├── profile.jpg
-│   │   │   │   │   └── regular.jpg
-│   │   │   │   └── index.md
-│   │   │   ├── papermod-icons.md
-│   │   │   ├── papermod-installation.md
-│   │   │   └── papermod-variables.md
-│   │   ├── placeholder-text.md
-│   │   └── rich-content.md
-│   ├── search.fr.md
-│   ├── search.md
-│   └── tags
-├── LICENSE
-├── README.md
-├── resources
-│   └── _gen
-│       ├── assets
-│       └── images
-├── static
-│   ├── android-chrome-192x192.png
-│   ├── android-chrome-512x512.png
-│   ├── apple-touch-icon.png
-│   ├── favicon-16x16.png
-│   ├── favicon-32x32.png
-│   ├── favicon.ico
-│   └── papermod-cover.png
-└── themes
-    └── hugo-PaperMod
+.
+├── .github/workflows/deploy.yml   # CI/CD 流水线
+├── content/posts/                  # 文章源文件（.md）
+├── layouts/                        # 自定义模板
+├── static/                         # 静态资源
+│   ├── img/
+│   ├── figures/
+│   └── figure/
+├── themes/PaperMod                 # Hugo 主题
+├── docs/                           # 构建产物（备用，当前由 GitHub Pages CI 生成）
+├── hugo.yaml                       # 站点配置
+└── README.md
 ```
+
+## 发布流水线
+
+```
+git push main
+    │
+    ▼
+GitHub Actions (.github/workflows/deploy.yml)
+    │
+    ├── actions/checkout@v4              拉取仓库（含 submodule）
+    ├── peaceiris/actions-hugo@v2        安装 Hugo v0.152.2 extended
+    ├── hugo --minify                    构建 → public/
+    ├── touch public/.nojekyll           禁用 Jekyll
+    ├── actions/upload-pages-artifact@v3 上传构建产物
+    └── actions/deploy-pages@v4          部署到 GitHub Pages
+    │
+    ▼
+https://leventureqys.github.io
+```
+
+- **触发条件**：向 `main` 分支推送代码自动触发
+- **构建工具**：Hugo v0.152.2（extended 版），启用 `--minify` 压缩
+- **Hugo 主题**：PaperMod（`themes/PaperMod`，通过 `git submodule` 管理）
+- **产物路径**：`./public/`（不提交到仓库，由 CI artifact 传递）
+- **部署目标**：GitHub Pages（`actions/deploy-pages@v4`）
+- **URL 规则**：Hugo 根据文件名或 frontmatter 中的 `slug` 字段生成 URL，**不允许出现中文字符**
+
+### 本地预览
+
+```bash
+hugo server -D
+```
+
+访问 `http://localhost:1313`，`-D` 表示同时显示草稿（draft）状态的文章。
 
 ---
 
@@ -65,17 +64,18 @@ Read Wiki => [hugo-PaperMod - Installation](https://github.com/adityatelange/hug
 ### 1. 文章存放位置
 
 - 所有正文文章统一放在 [content/posts/](content/posts/) 目录下。
-- 文件名使用中文或英文均可，但要与 `title` 保持语义一致，后缀必须为 `.md`。
+- 文件名使用英文（不允许中文），后缀必须为 `.md`。
 
 ### 2. Frontmatter 模板
 
-每篇文章顶部必须包含以下 YAML frontmatter（按需删改字段，但 `title` / `date` / `math` 三项不能漏）：
+每篇文章顶部必须包含以下 YAML frontmatter（按需删改字段，但 `title` / `date` / `slug` / `math` 四项不能漏）：
 
 ```yaml
 ---
 author: "Leventure"
 title: "文章标题"
 date: "YYYY-MM-DD"
+slug: article-english-slug          # 必须为纯英文，决定最终 URL（如 /posts/article-english-slug/）
 description: "一句话概述，会出现在列表页和分享卡片里"
 tags: ["标签1", "标签2"]
 categories: ["分类名"]
@@ -85,6 +85,7 @@ TocOpen: true
 ---
 ```
 
+- `slug` **必须为纯英文，不得包含中文字符**——它直接决定文章的 URL 路径。
 - `math: true` 缺失会导致全篇公式无法渲染——只要文中出现 `$...$` 或 `$$...$$`，就必须加。
 - `date` 写绝对日期，不要写"今天""上周"等相对表述。
 
@@ -161,13 +162,13 @@ $$
 
 在交付前，LLM 应自行确认：
 
-- [ ] frontmatter 完整，含 `math: true`（若有公式）
+- [ ] frontmatter 完整，包含 `slug`（纯英文）和 `math: true`（若有公式）
+- [ ] `slug` 字段为纯英文，无中文
 - [ ] 没有相邻的 `$$..$$` 块
 - [ ] 多行公式都包在 `aligned` / `cases` / `bmatrix` 等环境里
 - [ ] 图片路径以 `/img/` 开头，文件已放到 `static/img/` 对应目录
 - [ ] 代码块带语言标识
 - [ ] 日期为绝对日期
-- [ ] 从todo里面获取文章并更新完成后，需要清理todo目录
+- [ ] 从 todo 里面获取文章并更新完成后，需要清理 todo 目录
 
 ---
-
