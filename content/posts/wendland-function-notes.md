@@ -1,6 +1,6 @@
 ---
 author: "Leventure"
-title: "Wendland 函数笔记"
+title: "Wendland Functions"
 date: "2026-07-07"
 slug: wendland-function-notes
 description: "Wendland 紧支撑径向基函数的性质、构造与插值应用"
@@ -11,7 +11,7 @@ ShowToc: false
 TocOpen: false
 ---
 
-# Wendland 函数笔记
+# Wendland Functions
 
 Wendland 函数是一类具有紧支集的径向基函数（Compactly Supported Radial Basis Functions），由 Holger Wendland 在其 1995 年的论文 *Piecewise Polynomial, Positive Definite and Compactly Supported Radial Functions of Minimal Degree* 中提出。
 
