@@ -1,7 +1,7 @@
 {{- $inner := .Inner | strings.TrimSpace -}}
-{{- if eq .Type "block" -}}
+{{- if eq .Type "block" }}
 <div class="math math-display">$$
-{{- $inner | safeHTML -}}
+{{ $inner | safeHTML }}
 $$</div>
 {{- else -}}
 <span class="math math-inline">${{ $inner | safeHTML }}$</span>
