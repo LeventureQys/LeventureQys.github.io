@@ -1,0 +1,580 @@
+<!doctype html><html lang=en dir=auto data-theme=auto><head><meta charset=utf-8><meta http-equiv=X-UA-Compatible content="IE=edge"><meta name=viewport content="width=device-width,initial-scale=1,shrink-to-fit=no"><meta name=robots content="index, follow"><title>NSF-HiFiGAN-声码器学习笔记 | LeventureTecTips</title><meta name=keywords content="自监督学习,机器学习,RVC"><meta name=description content="rvc "><meta name=author content="Konpaku Youran"><link rel=canonical href=https://leventureqys.github.io/posts/nsf-hifigan-vocoder-notes/><link crossorigin=anonymous href=/assets/css/stylesheet.6c6d94cba159114b8fe82f6b1f0494978261ea41bfb61b2ca8047d6cfe9c7e98.css integrity="sha256-bG2Uy6FZEUuP6C9rHwSUl4Jh6kG/thssqAR9bP6cfpg=" rel="preload stylesheet" as=style><link rel=icon href=https://leventureqys.github.io/favicon.ico><link rel=icon type=image/png sizes=16x16 href=https://leventureqys.github.io/favicon-16x16.png><link rel=icon type=image/png sizes=32x32 href=https://leventureqys.github.io/favicon-32x32.png><link rel=apple-touch-icon href=https://leventureqys.github.io/apple-touch-icon.png><link rel=mask-icon href=https://leventureqys.github.io/safari-pinned-tab.svg><meta name=theme-color content="#2e2e33"><meta name=msapplication-TileColor content="#2e2e33"><link rel=alternate hreflang=en href=https://leventureqys.github.io/posts/nsf-hifigan-vocoder-notes/><noscript><style>#theme-toggle,.top-link{display:none}</style><style>@media(prefers-color-scheme:dark){:root{--theme:rgb(29, 30, 32);--entry:rgb(46, 46, 51);--primary:rgb(218, 218, 219);--secondary:rgb(155, 156, 157);--tertiary:rgb(65, 66, 68);--content:rgb(196, 196, 197);--code-block-bg:rgb(46, 46, 51);--code-bg:rgb(55, 56, 62);--border:rgb(51, 51, 51);color-scheme:dark}.list{background:var(--theme)}.toc{background:var(--entry)}}@media(prefers-color-scheme:light){.list::-webkit-scrollbar-thumb{border-color:var(--code-bg)}}</style></noscript><script>localStorage.getItem("pref-theme")==="dark"?document.querySelector("html").dataset.theme="dark":localStorage.getItem("pref-theme")==="light"?document.querySelector("html").dataset.theme="light":window.matchMedia("(prefers-color-scheme: dark)").matches?document.querySelector("html").dataset.theme="dark":document.querySelector("html").dataset.theme="light"</script><meta property="og:url" content="https://leventureqys.github.io/posts/nsf-hifigan-vocoder-notes/"><meta property="og:site_name" content="LeventureTecTips"><meta property="og:title" content="NSF-HiFiGAN-声码器学习笔记"><meta property="og:description" content="rvc "><meta property="og:locale" content="en-us"><meta property="og:type" content="article"><meta property="article:section" content="posts"><meta property="article:published_time" content="2026-02-14T00:00:00+00:00"><meta property="article:modified_time" content="2026-02-14T00:00:00+00:00"><meta property="article:tag" content="自监督学习"><meta property="article:tag" content="机器学习"><meta property="article:tag" content="RVC"><meta name=twitter:card content="summary"><meta name=twitter:title content="NSF-HiFiGAN-声码器学习笔记"><meta name=twitter:description content="rvc "><script type=application/ld+json>{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Posts","item":"https://leventureqys.github.io/posts/"},{"@type":"ListItem","position":2,"name":"NSF-HiFiGAN-声码器学习笔记","item":"https://leventureqys.github.io/posts/nsf-hifigan-vocoder-notes/"}]}</script><script type=application/ld+json>{"@context":"https://schema.org","@type":"BlogPosting","headline":"NSF-HiFiGAN-声码器学习笔记","name":"NSF-HiFiGAN-声码器学习笔记","description":"rvc ","keywords":["自监督学习","机器学习","RVC"],"articleBody":"从 HiFi-GAN 到 NSF-HiFi-GAN：声码器学习笔记 本文基于 RVC（Retrieval-based Voice Conversion）项目的实际代码，从零开始梳理 HiFi-GAN 声码器的原理，再过渡到 RVC 中真正使用的 NSF-HiFi-GAN 变体。 代码位置：infer/lib/infer_pack/models.py 和 infer/lib/infer_pack/modules.py\n一、先搞清楚声码器在干什么 在语音合成或语音转换的流程里，声码器处在最后一环。它的上游会输出某种\"中间表示\"——可能是 mel 频谱图，也可能是某个隐空间的向量。声码器要做的事情就一件：把这个中间表示变回可以听的音频波形。\n说得直白点：频谱图是一张\"图\"，声码器要把这张图\"念\"出来。\n传统做法（Griffin-Lim 之类的）靠数学迭代来恢复相位信息，结果通常比较糊。HiFi-GAN 走的是神经网络的路线——用一个生成器直接输出波形采样点，同时用判别器来监督生成质量。\n二、HiFi-GAN 的基本结构 HiFi-GAN 的论文是 2020 年发的（Jungil Kong 等人），核心思路可以用一句话概括：\n转置卷积做上采样，残差块做波形精炼，多尺度判别器做质量监督。\n2.1 生成器的整体流程 在 RVC 的代码里，标准 HiFi-GAN 生成器对应的是 Generator 类（models.py:204）。它的结构其实很规整：\nHiFi-GAN 生成器结构（40kHz 配置为例）\n┌─────────────────────────────────────────────────────────────┐ │ 输入：隐变量 z │ │ [batch, 192, T帧] │ └────────────────────┬────────────────────────────────────────┘ │ ▼ ┌────────────────────┐ │ 预处理卷积层 │ │ Conv1d(192→512) │ ← 把输入投射到高维空间 │ kernel_size=7 │ └────────┬───────────┘ │ ┌────────────┴────────────┐ │ 上采样 Stage 1 (×10) │ │ ConvTranspose1d(512→256)│ ← 时间轴拉长到 T×10 └────────┬─────────────────┘ │ ┌────────┴──────────────────────────────────┐ │ MRF (多感受野融合) │ │ ┌──────────┐ ┌──────────┐ ┌──────────┐│ │ │ResBlock │ │ResBlock │ │ResBlock ││ │ │kernel=3 │ │kernel=7 │ │kernel=11 ││ │ └──────────┘ └──────────┘ └──────────┘│ │ 输出取平均 │ └────────┬──────────────────────────────────┘ │ ┌────────┴────────────┐ │ 上采样 Stage 2 (×10)│ │ ConvTranspose1d(256→128)│ ← 时间轴拉长到 T×100 └────────┬─────────────┘ │ ┌────────┴──────────────────────────────────┐ │ MRF 融合 │ │ ResBlock×3 (kernel=3/7/11) → 平均 │ └────────┬──────────────────────────────────┘ │ ┌────────┴────────────┐ │ 上采样 Stage 3 (×2) │ │ ConvTranspose1d(128→64)│ ← 时间轴拉长到 T×200 └────────┬─────────────┘ │ ┌────────┴──────────────────────────────────┐ │ MRF 融合 │ │ ResBlock×3 (kernel=3/7/11) → 平均 │ └────────┬──────────────────────────────────┘ │ ┌────────┴────────────┐ │ 上采样 Stage 4 (×2) │ │ ConvTranspose1d(64→32) │ ← 时间轴拉长到 T×400 └────────┬─────────────┘ │ ┌────────┴──────────────────────────────────┐ │ MRF 融合 │ │ ResBlock×3 (kernel=3/7/11) → 平均 │ └────────┬──────────────────────────────────┘ │ ┌────┴────────────┐ │ 后处理卷积层 │ │ Conv1d(32→1) │ ← 压缩到单声道 │ kernel_size=7 │ └────┬─────────────┘ │ ▼ ┌────────────┐ │ Tanh │ ← 限幅到 [-1, 1] └─────┬──────┘ │ ▼ ┌──────────────────┐ │ 输出波形 │ │ [batch, 1, T×400]│ └──────────────────┘ 上采样的总倍率 = 10 × 10 × 2 × 2 = 400。这个数字等于 hop_length（帧移），含义是：输入的每一帧对应输出的 400 个采样点。对于 40kHz 采样率来说，一帧就是 10ms。\n有两件事值得注意：\n通道数逐级减半：512 → 256 → 128 → 64 → 32。分辨率在增加，通道数在减少，这跟图像领域的解码器思路一致。 每个上采样阶段之后都跟着一组 ResBlock，而不是只放一个。这组 ResBlock 就是 HiFi-GAN 最核心的设计之一——MRF。 2.2 MRF：多感受野融合 MRF 的全称是 Multi-Receptive Field Fusion。思路也很朴素：用不同大小的卷积核去观察不同范围的上下文，然后把结果加起来取平均。\n在 RVC 的配置（configs/v1/40k.json）里，resblock_kernel_sizes 是 [3, 7, 11]，所以每个上采样阶段后面并排放了 3 个 ResBlock，分别用 kernel_size=3、7、11。\nMRF 多感受野融合示意图\n上采样后的特征 x │ ┌───────────────┼───────────────┐ │ │ │ ▼ ▼ ▼ ┌──────────┐ ┌──────────┐ ┌──────────┐ │ResBlock1 │ │ResBlock2 │ │ResBlock3 │ │kernel=3 │ │kernel=7 │ │kernel=11 │ │(看近处) │ │(看中距) │ │(看远处) │ └────┬─────┘ └────┬─────┘ └────┬─────┘ │ │ │ └───────────────┴───────────────┘ │ 三路相加求平均 │ ▼ 融合后的输出 小 kernel（3）看局部细节，大 kernel（11）看更长的上下文。融合后既保留了细节纹理，也保持了长距离的连贯性。\n2.3 ResBlock：膨胀卷积的堆叠 RVC 默认用的是 ResBlock1（modules.py:252），它的内部结构是：\nResBlock1 内部结构（三轮串行处理）\n输入 x │ ├──────────────────────────┐ │ │ │ ┌────────────────────┐ │ │ │ LeakyReLU │ │ │ │ DilatedConv(d=1) │ │ 第一轮：膨胀率 1 │ │ LeakyReLU │ │ 感受野：3 │ │ Conv(d=1) │ │ │ └──────────┬─────────┘ │ │ │ │ └─────────────┼────────────┘ │ (残差相加) ▼ ┌──────────────────────────┐ │ │ │ ┌────────────────────┐ │ │ │ LeakyReLU │ │ │ │ DilatedConv(d=3) │ │ 第二轮：膨胀率 3 │ │ LeakyReLU │ │ 感受野：7 │ │ Conv(d=1) │ │ │ └──────────┬─────────┘ │ │ │ │ └─────────────┼────────────┘ │ (残差相加) ▼ ┌──────────────────────────┐ │ │ │ ┌────────────────────┐ │ │ │ LeakyReLU │ │ │ │ DilatedConv(d=5) │ │ 第三轮：膨胀率 5 │ │ LeakyReLU │ │ 感受野：11 │ │ Conv(d=1) │ │ │ └──────────┬─────────┘ │ │ │ │ └─────────────┼────────────┘ │ (残差相加) ▼ 输出 膨胀卷积原理\ndilation=1 时感受野是 3（标准卷积） dilation=3 时感受野是 7（跳着看，覆盖更远） dilation=5 时感受野是 11（跳得更远，看得更宽） 这样一个 ResBlock 内部就覆盖了多种尺度。再加上 MRF 层面的多 kernel 并行，HiFi-GAN 等于在\"感受野\"这件事上下了双重功夫。\n每一层卷积都用了 weight_norm——这是 HiFi-GAN 的另一个特点，用权重归一化代替 BatchNorm，生成质量更稳定。\n还有一种更轻量的 ResBlock2（modules.py:367），只有两轮、每轮只有一层膨胀卷积。配置文件里 \"resblock\": \"1\" 表示用 ResBlock1，设成 \"2\" 就用 ResBlock2。RVC 默认用的是 1。\n2.4 判别器（训练用） 生成器只管\"生成\"，判别器负责\"挑毛病\"。HiFi-GAN 用了两种判别器组合：\nMulti-Period Discriminator（MPD）：把一维波形按不同周期（2, 3, 5, 7, 11, 17）折叠成二维，然后用 2D 卷积判别。不同的周期能捕获不同频率成分的规律性。\nMulti-Scale Discriminator（MSD）：在原始波形和降采样后的波形上分别做判别，关注不同时间尺度的真实感。\n在 RVC 代码里，这两者合并成了 MultiPeriodDiscriminator（models.py:1052），里面同时包含了一个 DiscriminatorS（MSD 的角色）和多个 DiscriminatorP（MPD 的角色）。\n判别器在推理阶段不参与，但训练阶段是不可缺的。\n2.5 小结：标准 HiFi-GAN 的特点 生成速度快（全卷积，没有自回归） 音质好（GAN 训练 + 多尺度判别） 结构简洁（上采样 + ResBlock + 判别器，没有过于复杂的组件） 但它有一个问题：对音高（F0）的控制是隐式的。生成器只接收中间表示，音高信息完全靠网络自己从数据中学习。对于语音转换这种需要精确控制音高的任务来说，这还不够。\n三、NSF-HiFi-GAN：加入显式的音高控制 NSF 的全称是 Neural Source-Filter。这个名字来自语音学中经典的\"源-滤波器\"模型：\n人类的发声可以分解为两个部分：声带振动产生的源信号（周期性的脉冲），和声道共振形成的滤波器（塑造音色）。\nNSF-HiFi-GAN 做的事情就是把这个物理直觉引入神经网络：用 F0 生成一个显式的周期性源信号，注入到 HiFi-GAN 的生成过程中。这样网络就不用\"猜\"音高了，音高由输入直接决定。\nRVC 中的 NSF-HiFi-GAN 对应 GeneratorNSF 类（models.py:448）。\n3.1 生成源信号：SineGen 和 SourceModuleHnNSF 源信号的生成分两步。\n第一步：SineGen（正弦波生成器，models.py:312）\nSineGen 的输入是 F0 序列，输出是对应频率的正弦波。\nSineGen 工作流程\n┌──────────────────────────────────────────────────────┐ │ 输入：F0 序列 [batch, T] │ │ (每个时刻的基频，单位 Hz) │ └────────────────┬─────────────────────────────────────┘ │ ▼ ┌────────────────────────────┐ │ 1. F0 → 相位增量 │ │ phase_inc = F0 / sr │ (除以采样率) └──────────┬─────────────────┘ │ ▼ ┌────────────────────────────┐ │ 2. 累积相位 (cumsum) │ │ 保证相位连续不跳变 │ ← 避免\"咔哒\"声 └──────────┬─────────────────┘ │ ▼ ┌────────────────────────────┐ │ 3. sin(2π × phase) │ │ 生成正弦波 │ └──────────┬─────────────────┘ │ ▼ ┌────────────────────────────────────┐ │ 4. 浊音/清音判断 │ │ ┌────────────┬────────────┐ │ │ │ F0 \u003e 0 │ F0 = 0 │ │ │ │ (浊音) │ (清音) │ │ │ ├────────────┼────────────┤ │ │ │ 正弦波 │ 纯噪声 │ │ │ │ + 微噪声 │ │ │ │ └────────────┴────────────┘ │ └────────────────┬───────────────────┘ │ ▼ ┌─────────────────────────────────┐ │ 输出：sine_waves, uv, noise │ │ [batch, T×upp, harmonic_num+1] │ └─────────────────────────────────┘ 核心逻辑：\n把 F0（单位 Hz）除以采样率，得到每个采样点的相位增量 通过 cumsum（累积求和）得到连续的相位序列 取 sin(2π × phase) 得到正弦波 为什么要用 cumsum 而不是直接算？因为 F0 在时间轴上是变化的。如果每帧独立计算，帧与帧之间的相位会不连续，产生\"咔哒\"声。cumsum 保证了相位的连续累积。\n浊音vs清音的物理含义\n浊音段（F0 \u003e 0）：输出正弦波 + 微量噪声（std=0.003） 对应声带周期性振动产生的元音、鼻音等 清音段（F0 = 0）：输出纯噪声（幅度 = sine_amp / 3） 对应气流湍流产生的摩擦音、清音等 SineGen 还支持泛音（harmonics），不过 RVC 里 harmonic_num=0，所以只生成基频，没有泛音。\n第二步：SourceModuleHnNSF（源模块，models.py:391）\n这一层包装了 SineGen，做了两件事：\nSourceModuleHnNSF 结构\n┌──────────────────────────────────────┐ │ 输入：F0 [batch, T], upp=400 │ └──────────────┬───────────────────────┘ │ ▼ ┌──────────────────────┐ │ SineGen │ │ 生成多个谐波正弦波 │ ← 可能有多个谐波通道 └──────────┬───────────┘ │ ▼ ┌──────────────────────────────┐ │ Linear(harmonic_num+1, 1) │ ← 把多个谐波混合成单通道 │ (可学习的权重) │ └──────────┬───────────────────┘ │ ▼ ┌──────────────────────┐ │ Tanh │ ← 限幅到 [-1, 1] └──────────┬───────────┘ │ ▼ ┌──────────────────────┐ │ 输出：har_source │ │ [batch, T×400, 1] │ ← 单通道激励信号 └──────────────────────┘ 在 RVC 的默认配置下只有基频（harmonic_num=0），所以这个 Linear 层实际上就是一个标量缩放。但设计上保留了扩展性——如果以后想加泛音，只需要改一个参数。\n3.2 谐波注入：GeneratorNSF 的关键改动 GeneratorNSF 和标准 Generator 的骨架几乎一样——相同的上采样层，相同的 ResBlock，相同的 conv_pre/conv_post。关键区别在于多了一套 noise_convs，用于在每个上采样阶段注入源信号。\nGeneratorNSF 前向过程概览\n步骤1：生成源信号 ┌──────────────────────────────────┐ │ F0 → SourceModuleHnNSF │ │ 输出：har_source [B, 1, T×400] │ ← 保持最终输出的分辨率 └──────────────┬───────────────────┘ │ │ (全程保持这个分辨率) │ 步骤2：隐变量处理 │ ┌───────────────┐ │ │ z [B,192,T] │ │ └──────┬────────┘ │ │ │ ▼ │ conv_pre(192→512) │ │ │ │ │ 步骤3：逐级上采样+谐波注入 │ │ │ ▼ ▼ ┌─────────────────────────────────┐ │ Stage 0: 上采样 ×10 │ │ ups[0]: 512→256 │ │ + noise_conv[0](stride=40) ← 从 har_source 下采样 │ = x + x_source │ 每40个点取1个匹配当前分辨率 │ → MRF(ResBlock×3) │ └──────────┬──────────────────────┘ │ ▼ ┌─────────────────────────────────┐ │ Stage 1: 上采样 ×10 │ │ ups[1]: 256→128 │ │ + noise_conv[1](stride=4) ← 从 har_source 下采样 │ = x + x_source │ 每4个点取1个 │ → MRF(ResBlock×3) │ └──────────┬──────────────────────┘ │ ▼ ┌─────────────────────────────────┐ │ Stage 2: 上采样 ×2 │ │ ups[2]: 128→64 │ │ + noise_conv[2](stride=2) ← 从 har_source 下采样 │ = x + x_source │ 每2个点取1个 │ → MRF(ResBlock×3) │ └──────────┬──────────────────────┘ │ ▼ ┌─────────────────────────────────┐ │ Stage 3: 上采样 ×2 │ │ ups[3]: 64→32 │ │ + noise_conv[3](stride=1) ← 从 har_source 直接用 │ = x + x_source │ 不再下采样 │ → MRF(ResBlock×3) │ └──────────┬──────────────────────┘ │ ▼ ┌─────────────────────┐ │ conv_post(32→1) │ │ Tanh │ └──────────┬──────────┘ │ ▼ ┌──────────────────┐ │ 输出波形 │ │ [B, 1, T×400] │ └──────────────────┘ 这里有个细节很关键：源信号（har_source）始终保持在最终输出的采样率上（比如 40000 个采样点/秒），而上采样过程中的 x 的时间分辨率是逐级增加的。所以每个阶段的 noise_convs 需要把全分辨率的源信号下采样到当前阶段的分辨率。\nnoise_conv 的 stride 计算逻辑\n以 40kHz 配置（upsample_rates = [10, 10, 2, 2]）为例：\n上采样阶段 上采样倍率 x 的时间分辨率 noise_conv 的 stride 含义 0 ×10 T×10 10×2×2 = 40 源信号每 40 个点取 1 个 1 ×10 T×100 2×2 = 4 源信号每 4 个点取 1 个 2 ×2 T×200 2 源信号每 2 个点取 1 个 3 ×2 T×400 1 (kernel=1) 源信号直接用 注意：noise_conv 不只是简单的下采样，它同时把 1 通道扩展到了 c_cur 通道（256 / 128 / 64 / 32），这样才能跟 x 直接相加。这个卷积的参数是可学习的，网络可以自己决定怎么利用源信号的信息。\n3.3 用一张图看全貌 把上面的内容组合起来，GeneratorNSF 在 40kHz 配置下的完整数据流是：\nF0 [batch, T] │ ├── Upsample(×400) ──→ SourceModuleHnNSF ──→ har_source [batch, 1, T×400] │ │ │ ┌───────────────────────────┤（全程保持最高分辨率） │ │ │ z [batch, 192, T] │ │ │ │ │ ▼ │ │ conv_pre(192→512) │ │ │ │ │ ▼ ▼ │ Stage 0: ×10上采样 noise_conv(stride=40) │ [512→256] [1→256] │ x = x + x_source ◄──┘ │ → MRF(3 ResBlocks, k=3/7/11) │ │ │ ▼ ▼ Stage 1: ×10上采样 noise_conv(stride=4) [256→128] [1→128] x = x + x_source ◄────────────────────┘ → MRF(3 ResBlocks, k=3/7/11) │ ▼ Stage 2: ×2上采样 noise_conv(stride=2) [128→64] [1→64] x = x + x_source ◄────────────────────┘ → MRF(3 ResBlocks, k=3/7/11) │ ▼ Stage 3: ×2上采样 noise_conv(stride=1) [64→32] [1→32] x = x + x_source ◄────────────────────┘ → MRF(3 ResBlocks, k=3/7/11) │ ▼ conv_post(32→1) → tanh → 输出波形 [batch, 1, T×400] 3.4 说话人条件（gin_channels） RVC 还支持多说话人。GeneratorNSF 里有一个可选的说话人条件注入层。\n说话人条件注入示意\n┌────────────────────────────┐ │ 说话人嵌入 g │ │ [batch, gin_channels, 1] │ ← 从 emb_g 查表得到 └──────────┬─────────────────┘ │ ▼ ┌──────────────────┐ │ 1×1 卷积映射 │ │ gin_ch → 512 │ ← 映射到与 conv_pre 输出相同的维度 └──────────┬───────┘ │ │ 隐变量 z ────┼────→ conv_pre(192→512) │ │ └──────────────┤ ▼ x + cond(g) ← 直接相加 │ ▼ 后续所有上采样和ResBlock处理 都在\"带有说话人特征\"的基础上进行 这意味着说话人信息在最开始就注入了，后续所有上采样和 ResBlock 处理都是在\"带有说话人特征\"的基础上进行的。\n四、GeneratorNSF 在 RVC 系统中的位置 声码器不是孤立存在的。在 RVC 里，它被嵌入到一个完整的 VITS 风格的框架中。以 SynthesizerTrnMs256NSFsid（models.py:602）为例：\n完整的推理流程： phone（语音特征，256 维） pitch（音高序号） sid（说话人 ID） │ │ │ ▼ ▼ ▼ TextEncoder ──────────────────────────→ (μ, σ) emb_g → g │ │ ▼ │ 采样 z_p ~ N(μ, σ) │ │ │ ▼ │ ResidualCouplingBlock (flow, reverse=True) ◄────── g │ ▼ z（隐变量） │ ▼ F0（连续的基频值 nsff0） GeneratorNSF(z, f0, g) ◄─────────────────┘ │ ▼ 输出波形 TextEncoder：把 phone 特征（+ pitch 嵌入）编码成高斯分布的均值和方差 ResidualCouplingBlock：一个 normalizing flow 模块，在推理时做逆变换，把先验分布的采样转换到隐空间 GeneratorNSF：我们分析的声码器，接收 flow 输出的隐变量 z 和连续的 F0 值 nsff0，生成最终波形 训练时还有一个 PosteriorEncoder，它直接从 mel 频谱编码出后验分布，用于计算 KL 散度 loss，推理时不用。\nRVC 提供了四种合成器变体：\n类名 phone 维度 是否使用 F0 解码器 SynthesizerTrnMs256NSFsid 256 是 GeneratorNSF SynthesizerTrnMs768NSFsid 768 是 GeneratorNSF SynthesizerTrnMs256NSFsid_nono 256 否 Generator（标准） SynthesizerTrnMs768NSFsid_nono 768 否 Generator（标准） 256 和 768 的区别在于上游特征提取器的输出维度（256 对应 HuBERT base，768 对应 HuBERT large 等）。\n带 “nono” 后缀的版本不使用 F0，也就不需要 NSF——它们直接用标准的 HiFi-GAN Generator。这种模式音高控制差一些，但不需要提取 F0，适合对音高没有严格要求的场景。\n五、.pth 权重文件：声码器的\"灵魂\"从哪来 到目前为止我们一直在看网络结构——但结构只是骨架。一个 GeneratorNSF 刚创建出来的时候，所有卷积核的权重都是随机初始化的，它什么都不会。真正让声码器能生成逼真语音的，是训练好的权重参数，保存在 .pth 文件里。\n理解 .pth 文件的结构和加载流程，对于理解声码器的实际运行至关重要。\n5.1 .pth 文件里到底有什么 RVC 的语音模型文件（比如用户训练出来的 xxx_e200_s8000.pth）并不是只存了声码器的权重——它存的是整个合成器的完整快照。\n.pth 文件结构\n┌─────────────────────────────────────────────┐ │ .pth 文件 (PyTorch 检查点) │ ├─────────────────────────────────────────────┤ │ │ │ ┌─────────────────────────────────────┐ │ │ │ \"weight\" (state_dict) │ │ │ │ ├─ enc_p.* ← TextEncoder │ │ │ │ ├─ dec.* ← GeneratorNSF │ │ ★ 声码器权重 │ │ ├─ flow.* ← Flow模块 │ │ │ │ └─ emb_g.weight ← 说话人嵌入 │ │ │ └─────────────────────────────────────┘ │ │ │ │ ┌─────────────────────────────────────┐ │ │ │ \"config\" (列表, 18个元素) │ │ │ │ [0] spec_channels = 1025 │ │ │ │ [1] segment_size = 12800 │ │ │ │ [2] inter_channels = 192 │ │ │ │ ... │ │ │ │ [9] resblock = \"1\" │ │ │ │ [10] resblock_kernel_sizes = [3,7,11] │ │ │ [11] resblock_dilation_sizes │ │ │ │ [12] upsample_rates = [10,10,2,2]│ │ ★ 声码器结构参数 │ │ [13] upsample_initial_channel=512 │ │ │ │ [14] upsample_kernel_sizes │ │ │ │ [15] spk_embed_dim = 109 │ │ │ │ [16] gin_channels = 256 │ │ │ │ [17] sr = 40000 │ │ │ └─────────────────────────────────────┘ │ │ │ │ ┌─────────────────────────────────────┐ │ │ │ \"f0\" = 1 (是否使用F0) │ │ │ │ \"version\" = \"v1\" (模型版本) │ │ │ │ \"info\" = \"epoch_200_step_8000\" │ │ │ └─────────────────────────────────────┘ │ │ │ └─────────────────────────────────────────────┘ weight 字典中的声码器权重（dec. 前缀）*\n┌─────────────────────────────────────────────────────┐ │ dec.conv_pre.weight ← 预卷积层 │ │ dec.conv_pre.bias │ ├─────────────────────────────────────────────────────┤ │ dec.ups.0.weight ← 第0级上采样 │ │ dec.ups.0.bias │ │ dec.ups.1.weight ← 第1级上采样 │ │ dec.ups.1.bias │ │ dec.ups.2.weight ← 第2级上采样 │ │ dec.ups.2.bias │ │ dec.ups.3.weight ← 第3级上采样 │ │ dec.ups.3.bias │ ├─────────────────────────────────────────────────────┤ │ dec.noise_convs.0.weight ← 第0级谐波注入 │ │ dec.noise_convs.0.bias │ │ dec.noise_convs.1.weight ← 第1级谐波注入 │ │ dec.noise_convs.1.bias │ │ dec.noise_convs.2.weight ← 第2级谐波注入 │ │ dec.noise_convs.2.bias │ │ dec.noise_convs.3.weight ← 第3级谐波注入 │ │ dec.noise_convs.3.bias │ ├─────────────────────────────────────────────────────┤ │ dec.resblocks.0.convs1.0.weight ← ResBlock膨胀卷积│ │ dec.resblocks.0.convs1.0.bias │ │ dec.resblocks.0.convs2.0.weight │ │ dec.resblocks.0.convs2.0.bias │ │ ...（每个上采样阶段后有3个ResBlock） │ ├─────────────────────────────────────────────────────┤ │ dec.m_source.l_linear.weight ← 谐波混合层 │ │ dec.m_source.l_linear.bias │ ├─────────────────────────────────────────────────────┤ │ dec.conv_post.weight ← 后卷积层 │ │ dec.conv_post.bias │ └─────────────────────────────────────────────────────┘ 注意：dec.* 开头的就是声码器 GeneratorNSF 的权重。声码器的上采样卷积、noise_convs、所有 ResBlock、SourceModule 的线性层——全部保存在这个 .pth 文件里。\nconfig 列表（决定网络结构）\n┌──────┬────────────────────────────┬─────────────────────────┐ │ 索引 │ 参数名 │ 示例值（40kHz） │ ├──────┼────────────────────────────┼─────────────────────────┤ │ [0] │ spec_channels │ 1025 │ │ [1] │ segment_size │ 12800 │ │ [2] │ inter_channels │ 192 │ │ [3] │ hidden_channels │ 192 │ │ [4] │ filter_channels │ 768 │ │ [5] │ n_heads │ 2 │ │ [6] │ n_layers │ 6 │ │ [7] │ kernel_size │ 3 │ │ [8] │ p_dropout │ 0 │ ├──────┼────────────────────────────┼─────────────────────────┤ │ [9] │ resblock │ \"1\" │ ◄─┐ │ [10] │ resblock_kernel_sizes │ [3, 7, 11] │ │ │ [11] │ resblock_dilation_sizes │ [[1,3,5], [1,3,5], ...] │ │ 声码器 │ [12] │ upsample_rates │ [10, 10, 2, 2] │ │ 结构 │ [13] │ upsample_initial_channel │ 512 │ │ 参数 │ [14] │ upsample_kernel_sizes │ [16, 16, 4, 4] │ │ ├──────┼────────────────────────────┼─────────────────────────┤ ◄─┘ │ [15] │ spk_embed_dim │ 109 │ │ [16] │ gin_channels │ 256 │ │ [17] │ sr │ 40000 │ └──────┴────────────────────────────┴─────────────────────────┘ 其中索引 [9] 到 [14] 直接决定了声码器 GeneratorNSF 的内部结构——用哪种 ResBlock、上采样几级、每级多少倍率、通道数多少。这些参数一旦确定，声码器的网络结构就被完全固定了。\n5.2 加载流程：从文件到可用的声码器 加载过程在 infer/modules/vc/modules.py:103-127 的 get_vc() 方法中完成。\n四步加载流程\n┌─────────────────────────────────────────────┐ │ 步骤1：读取文件，解析元信息 │ ├─────────────────────────────────────────────┤ │ torch.load(\"model.pth\") │ │ ├─ 读取 config[-1] → tgt_sr (采样率) │ │ ├─ 读取 emb_g.weight.shape[0] → n_spk │ ★ 直接看嵌入表行数 │ ├─ 读取 f0 → if_f0 (是否用F0) │ │ └─ 读取 version → \"v1\"或\"v2\" │ └─────────────────┬───────────────────────────┘ │ ▼ ┌─────────────────────────────────────────────┐ │ 步骤2：根据版本和F0选项，创建合成器空壳 │ ├─────────────────────────────────────────────┤ │ 选择合成器类： │ │ ┌────────────────┬─────────────────────┐ │ │ │ v1 + F0=1 │ SynthesizerTrnMs256NSFsid │ │ │ v1 + F0=0 │ SynthesizerTrnMs256NSFsid_nono│ │ │ v2 + F0=1 │ SynthesizerTrnMs768NSFsid │ │ │ v2 + F0=0 │ SynthesizerTrnMs768NSFsid_nono│ │ └────────────────┴─────────────────────┘ │ │ │ │ 用 config 列表参数构建模型 │ │ (此时权重还是随机值) │ └─────────────────┬───────────────────────────┘ │ ▼ ┌─────────────────────────────────────────────┐ │ 步骤3：删掉推理不需要的模块，加载权重 │ ├─────────────────────────────────────────────┤ │ del self.net_g.enc_q │ ← 后验编码器只在训练时用 │ self.net_g.load_state_dict( │ │ cpt[\"weight\"], │ │ strict=False │ ← 允许缺失的 enc_q.* │ ) │ └─────────────────┬───────────────────────────┘ │ ▼ ┌─────────────────────────────────────────────┐ │ 步骤4：设置精度，移到目标设备 │ ├─────────────────────────────────────────────┤ │ self.net_g.eval() │ ← 切换到评估模式 │ self.net_g.to(device) │ ← CPU/CUDA/MPS │ if is_half: │ │ self.net_g.half() # FP16推理 │ │ else: │ │ self.net_g.float() # FP32推理 │ └─────────────────┬───────────────────────────┘ │ ▼ ┌─────────────────────────────────────────────┐ │ 声码器就绪（作为 self.net_g.dec） │ │ 带着训练好的权重，可以开始推理 │ └─────────────────────────────────────────────┘ 5.3 推理时权重是怎么流动的 加载完成后，推理走的是这条路径（pipeline.py:186-279）：\n原始音频 (16kHz) │ ├──→ HuBERT (assets/hubert/hubert_base.pt) │ 提取语音内容特征 feats [batch, T, 256/768] │ ├──→ RMVPE (assets/rmvpe/rmvpe.pt) │ 提取 F0 基频曲线 → pitch (量化) + pitchf (连续) │ ├──→ FAISS Index (.index 文件) │ 用特征检索替换部分 feats，融入目标说话人的音色 │ └──→ net_g.infer(feats, p_len, pitch, pitchf, sid) │ ├── TextEncoder: feats + pitch → z_p（先验隐变量） ├── Flow (reverse): z_p → z（解码用的隐变量） ├── GeneratorNSF: z + pitchf + speaker_emb → 波形 │ │ │ ├── dec.conv_pre: z 投射到高维 │ ├── dec.cond: 注入说话人嵌入 │ ├── dec.m_source: pitchf → 谐波激励源 │ ├── dec.ups + dec.noise_convs: 上采样 + 谐波注入 │ ├── dec.resblocks: MRF 波形精炼 │ └── dec.conv_post + tanh: 输出波形 │ └──→ 输出音频波形 可以看到，除了语音模型自身的 .pth 文件，推理过程还依赖另外两个预训练模型：\nHuBERT（assets/hubert/hubert_base.pt）：Facebook 的自监督语音表示模型，负责从原始音频中提取\"说了什么\"的内容特征（但不包含音色信息） RMVPE（assets/rmvpe/rmvpe.pt）：F0 估计模型，提取\"唱/说的音高是多少\" 这三者的分工很明确：HuBERT 管内容，RMVPE 管音高，语音模型 .pth 管\"怎么用目标说话人的声音把这些内容和音高重新合成出来\"。\n5.4 .index 文件和特征检索 除了 .pth 之外，RVC 推理时还会用到一个 .index 文件。这不是声码器的权重，而是一个 FAISS 向量索引。\n它的作用发生在特征空间，在声码器之前：\n特征检索流程\n┌──────────────────────────────────┐ │ 输入音频 HuBERT 特征 │ │ [batch, T, 256/768] │ └──────────┬───────────────────────┘ │ ▼ ┌──────────────────────────────────┐ │ FAISS Index 检索 │ │ search(feats, k=8) │ ← 找最近的8个邻居 └──────────┬───────────────────────┘ │ ▼ ┌──────────────────────────────────┐ │ 加权平均 │ │ weight = 1 / distance² │ ← 距离越近权重越大 │ retrieved = Σ(neighbors × w) │ └──────────┬───────────────────────┘ │ ▼ ┌──────────────────────────────────────────┐ │ 混合原始特征和检索特征 │ │ final_feats = retrieved × index_rate │ │ + orig_feats × (1-rate) │ └──────────┬───────────────────────────────┘ │ ▼ 送入 TextEncoder 和 声码器 index_rate 参数的影响\nindex_rate = 0：完全使用原始特征，保持输入音色 index_rate = 1：完全使用检索特征，最像目标说话人 index_rate = 0.75（常用）：平衡音色转换和细节保留 这个检索过程跟声码器没有直接关系，但它决定了声码器接收到的输入质量。如果检索做得好，送进 GeneratorNSF 的隐变量就已经很接近目标说话人了，声码器只需要忠实地合成就行。\n5.5 训练出来的权重对声码器意味着什么 回到声码器本身。.pth 文件中 dec.* 前缀的权重，到底\"学\"到了什么？\ndec.ups.*.weight（上采样转置卷积）：学会了怎么把低分辨率特征平滑地拉伸到高分辨率，同时不引入明显的棋盘格伪影 dec.resblocks.*.convs*.weight（ResBlock 里的膨胀卷积）：学会了在不同尺度上精炼波形的细节纹理——比如摩擦音的高频噪声特征、元音的共振峰结构 dec.noise_convs.*.weight（谐波注入卷积）：学会了在每个分辨率级别上怎么利用正弦波激励源——不是简单地\"加上去\"，而是选择性地调整和变形 dec.m_source.l_linear.weight（谐波混合层）：学会了用什么比例把基频正弦波传递给后续网络 dec.conv_pre.weight 和 dec.conv_post.weight：学会了输入和输出的通道映射 所有这些权重是在训练过程中通过 GAN 对抗和重建损失共同优化出来的。不同的训练数据（不同的说话人）会得到不同的权重，所以同一个声码器结构可以生成完全不同的声音——关键就在于 .pth 文件里的这些数字。\n六、不同采样率下的配置对比（补充） RVC 支持 32kHz、40kHz、48kHz 三种采样率，对应不同的声码器配置：\n参数 32kHz 40kHz 48kHz hop_length 320 400 480 upsample_rates [10,4,2,2,2] [10,10,2,2] [10,6,2,2,2] 上采样总倍率 320 400 480 upsample_kernel_sizes [16,16,4,4,4] [16,16,4,4] [16,16,4,4,4] n_mel_channels 80 125 128 上采样阶段数 5 4 5 upsample_initial_channel 512 512 512 有一个规律：上采样总倍率 = hop_length。这是因为声码器的输入是帧级别的（每帧对应 hop_length 个采样点），输出是采样点级别的，正好需要拉长 hop_length 倍。\n32kHz 和 48kHz 用了 5 级上采样（多了一级 ×4 或 ×6），而 40kHz 只用 4 级（两个 ×10）。级数多意味着更细粒度的逐步还原，但也意味着更多的参数和计算量。\n七、代码中值得注意的实现细节 7.1 weight_norm 而不是 batch_norm HiFi-GAN 全程使用 weight normalization。相比 batch norm，weight norm 不依赖 batch 统计量，在生成任务中表现更稳定。推理时可以通过 remove_weight_norm() 去掉，减少计算开销。\n7.2 LeakyReLU 的斜率 整个项目里 LeakyReLU 的负半轴斜率统一是 0.1（modules.py:17: LRELU_SLOPE = 0.1）。这个值在 HiFi-GAN 原论文里就是这么设的，基本是业界默认。\n7.3 转置卷积的 padding 计算 上采样用的 ConvTranspose1d 的 padding 是 (kernel_size - stride) // 2。这个公式保证输出长度恰好是输入长度 × stride，不会多出或少掉采样点。\n7.4 SineGen 中的相位连续性处理 SineGen 的 _f02sine() 方法中有一段关键的相位连续性处理逻辑：\n帧间相位累积过程\n第 1 帧 第 2 帧 第 3 帧 ┌────────────┐ ┌────────────┐ ┌────────────┐ │ F0=220Hz │ │ F0=440Hz │ │ F0=330Hz │ │ 生成400个点│ │ 生成400个点│ │ 生成400个点│ └──────┬─────┘ └──────┬─────┘ └──────┬─────┘ │ │ │ │ 取最后一个点 │ 取最后一个点 │ │ 的相位增量 │ 的相位增量 │ ▼ ▼ ▼ phase_end₁ phase_end₂ phase_end₃ │ │ │ └─────────────────────┼─────────────────────┘ │ ┌───────────▼───────────┐ │ 累积相位修正序列 │ │ rad_acc = cumsum() │ │ 保证帧间相位不跳变 │ └───────────┬───────────┘ │ ┌──────────────┴──────────────┐ │ 加到下一帧的起始相位上 │ │ 避免\"咔哒\"声 │ └─────────────────────────────┘ 核心机制： 1. 每帧最后一个采样点的相位增量 2. 通过 fmod 归一化到 [-0.5, 0.5) 防止数值累积溢出 3. cumsum 累积相位差 4. 用 F.pad 填充到下一帧起始位置 这个处理保证了当 F0 在帧与帧之间变化时，正弦波的相位保持连续，不会产生相位突变导致的\"咔哒\"杂音。归一化到 [-0.5, 0.5) 范围是为了避免浮点数累积误差。\n7.5 torch.jit.script 的兼容处理 代码里有不少 __prepare_scriptable__ 方法和类型标注（Optional[torch.Tensor]）。这是为了兼容 TorchScript 编译——RVC 支持把模型导出为 TorchScript 格式以提升推理性能。@torch.jit.ignore 标记训练用的 forward，@torch.jit.export 标记推理用的 infer。\n八、回顾：为什么 RVC 选择 NSF-HiFi-GAN 把标准 HiFi-GAN 和 NSF 变体放在一起看，关键差异只有一处：有没有把 F0 信息显式注入生成过程。\n对于 TTS（文本转语音）来说，标准 HiFi-GAN 就够了——因为 TTS 的上游模型（比如 FastSpeech）已经把音高信息编码进了 mel 频谱，声码器只需要忠实还原。\n但 RVC 做的是变声。它需要把一个人的声音转换成另一个人的声音，同时允许用户手动调整音高。如果声码器不知道目标音高是多少，它就只能从隐变量里\"猜\"，结果往往是音高不稳、出现抖动甚至跑调。\nNSF-HiFi-GAN 通过正弦波信号把 F0 “告诉\"了生成器的每一层。网络不再需要自己发明轮子来建模周期性——正弦波已经提供了准确的周期结构，网络只需要在此基础上\"雕刻\"出正确的音色和细节。\n这种设计的代价很小（多了一个 SineGen + 几个 1D 卷积），但带来的音高稳定性提升是显著的。\n附录 A：关键类速查表 类名 文件位置 作用 SineGen models.py:312 根据 F0 生成正弦波 SourceModuleHnNSF models.py:391 将多个谐波正弦波合并为单通道激励信号 Generator models.py:204 标准 HiFi-GAN 生成器（无 F0 输入） GeneratorNSF models.py:448 NSF 增强的 HiFi-GAN 生成器（有 F0 输入） ResBlock1 modules.py:252 3 轮膨胀残差块（dilation=1,3,5） ResBlock2 modules.py:367 2 轮膨胀残差块（dilation=1,3） MultiPeriodDiscriminator models.py:1052 训练用判别器（MPD + MSD） SynthesizerTrnMs256NSFsid models.py:602 完整合成器（256维，带 F0） SynthesizerTrnMs768NSFsid models.py:779 完整合成器（768维，带 F0） SynthesizerTrnMs256NSFsid_nono models.py:836 完整合成器（256维，不带 F0） SynthesizerTrnMs768NSFsid_nono models.py:994 完整合成器（768维，不带 F0） 附录 B：进一步阅读 HiFi-GAN 原论文：HiFi-GAN: Generative Adversarial Networks for Efficient and High Fidelity Speech Synthesis (Kong et al., 2020) NSF 原论文：Neural Source-Filter Waveform Models for Statistical Parametric Speech Synthesis (Wang et al., 2019) VITS 论文（RVC 整体框架的基础）：Conditional Variational Autoencoder with Adversarial Learning for End-to-End Text-to-Speech (Kim et al., 2021) ","wordCount":"2689","inLanguage":"en","datePublished":"2026-02-14T00:00:00Z","dateModified":"2026-02-14T00:00:00Z","author":{"@type":"Person","name":"Konpaku Youran"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://leventureqys.github.io/posts/nsf-hifigan-vocoder-notes/"},"publisher":{"@type":"Organization","name":"LeventureTecTips","logo":{"@type":"ImageObject","url":"https://leventureqys.github.io/favicon.ico"}}}</script></head><body id=top><header class=header><nav class=nav><div class=logo><a href=https://leventureqys.github.io/ accesskey=h title="LeventureTecTips (Alt + H)">LeventureTecTips</a><div class=logo-switches><button id=theme-toggle accesskey=t title="(Alt + T)" aria-label="Toggle theme">
+<svg id="moon" width="24" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+<svg id="sun" width="24" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button></div></div><ul id=menu><li><a href=https://leventureqys.github.io/archives title=Archive><span>Archive</span></a></li><li><a href=https://leventureqys.github.io/search/ title="Search (Alt + /)" accesskey=/><span>Search</span></a></li><li><a href=https://leventureqys.github.io/tags/ title=Tags><span>Tags</span></a></li><li><a href=https://leventureqys.github.io/categories/ title=Categories><span>Categories</span></a></li></ul></nav></header><main class=main><article class=post-single><header class=post-header><div class=breadcrumbs><a href=https://leventureqys.github.io/>Home</a>&nbsp;»&nbsp;<a href=https://leventureqys.github.io/posts/>Posts</a></div><h1 class="post-title entry-hint-parent">NSF-HiFiGAN-声码器学习笔记</h1><div class=post-description>rvc</div><div class=post-meta><span title='2026-02-14 00:00:00 +0000 UTC'>February 14, 2026</span>&nbsp;·&nbsp;<span>13 min</span>&nbsp;·&nbsp;<span>Konpaku Youran</span></div></header><button id=toc-toggle-btn onclick=toggleTOCSidebar() aria-label="Toggle Table of Contents" title="Toggle Table of Contents">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button><div id=toc-overlay onclick=toggleTOCSidebar()></div><div id=toc-sidebar><div class=toc-sidebar-header><span class=toc-sidebar-title>Table of Contents</span>
+<button id=toc-close-btn onclick=toggleTOCSidebar() aria-label=Close>
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div><div class=toc-sidebar-body><div class=toc><div class=inner><ul><li><a href=#%e4%bb%8e-hifi-gan-%e5%88%b0-nsf-hifi-gan%e5%a3%b0%e7%a0%81%e5%99%a8%e5%ad%a6%e4%b9%a0%e7%ac%94%e8%ae%b0 aria-label="从 HiFi-GAN 到 NSF-HiFi-GAN：声码器学习笔记">从 HiFi-GAN 到 NSF-HiFi-GAN：声码器学习笔记</a><ul><li><a href=#%e4%b8%80%e5%85%88%e6%90%9e%e6%b8%85%e6%a5%9a%e5%a3%b0%e7%a0%81%e5%99%a8%e5%9c%a8%e5%b9%b2%e4%bb%80%e4%b9%88 aria-label=一、先搞清楚声码器在干什么>一、先搞清楚声码器在干什么</a></li><li><a href=#%e4%ba%8chifi-gan-%e7%9a%84%e5%9f%ba%e6%9c%ac%e7%bb%93%e6%9e%84 aria-label="二、HiFi-GAN 的基本结构">二、HiFi-GAN 的基本结构</a><ul><li><a href=#21-%e7%94%9f%e6%88%90%e5%99%a8%e7%9a%84%e6%95%b4%e4%bd%93%e6%b5%81%e7%a8%8b aria-label="2.1 生成器的整体流程">2.1 生成器的整体流程</a></li><li><a href=#22-mrf%e5%a4%9a%e6%84%9f%e5%8f%97%e9%87%8e%e8%9e%8d%e5%90%88 aria-label="2.2 MRF：多感受野融合">2.2 MRF：多感受野融合</a></li><li><a href=#23-resblock%e8%86%a8%e8%83%80%e5%8d%b7%e7%a7%af%e7%9a%84%e5%a0%86%e5%8f%a0 aria-label="2.3 ResBlock：膨胀卷积的堆叠">2.3 ResBlock：膨胀卷积的堆叠</a></li><li><a href=#24-%e5%88%a4%e5%88%ab%e5%99%a8%e8%ae%ad%e7%bb%83%e7%94%a8 aria-label="2.4 判别器（训练用）">2.4 判别器（训练用）</a></li><li><a href=#25-%e5%b0%8f%e7%bb%93%e6%a0%87%e5%87%86-hifi-gan-%e7%9a%84%e7%89%b9%e7%82%b9 aria-label="2.5 小结：标准 HiFi-GAN 的特点">2.5 小结：标准 HiFi-GAN 的特点</a></li></ul></li><li><a href=#%e4%b8%89nsf-hifi-gan%e5%8a%a0%e5%85%a5%e6%98%be%e5%bc%8f%e7%9a%84%e9%9f%b3%e9%ab%98%e6%8e%a7%e5%88%b6 aria-label=三、NSF-HiFi-GAN：加入显式的音高控制>三、NSF-HiFi-GAN：加入显式的音高控制</a><ul><li><a href=#31-%e7%94%9f%e6%88%90%e6%ba%90%e4%bf%a1%e5%8f%b7sinegen-%e5%92%8c-sourcemodulehnnsf aria-label="3.1 生成源信号：SineGen 和 SourceModuleHnNSF">3.1 生成源信号：SineGen 和 SourceModuleHnNSF</a></li><li><a href=#32-%e8%b0%90%e6%b3%a2%e6%b3%a8%e5%85%a5generatornsf-%e7%9a%84%e5%85%b3%e9%94%ae%e6%94%b9%e5%8a%a8 aria-label="3.2 谐波注入：GeneratorNSF 的关键改动">3.2 谐波注入：GeneratorNSF 的关键改动</a></li><li><a href=#33-%e7%94%a8%e4%b8%80%e5%bc%a0%e5%9b%be%e7%9c%8b%e5%85%a8%e8%b2%8c aria-label="3.3 用一张图看全貌">3.3 用一张图看全貌</a></li><li><a href=#34-%e8%af%b4%e8%af%9d%e4%ba%ba%e6%9d%a1%e4%bb%b6gin_channels aria-label="3.4 说话人条件（gin_channels）">3.4 说话人条件（gin_channels）</a></li></ul></li><li><a href=#%e5%9b%9bgeneratornsf-%e5%9c%a8-rvc-%e7%b3%bb%e7%bb%9f%e4%b8%ad%e7%9a%84%e4%bd%8d%e7%bd%ae aria-label="四、GeneratorNSF 在 RVC 系统中的位置">四、GeneratorNSF 在 RVC 系统中的位置</a></li><li><a href=#%e4%ba%94pth-%e6%9d%83%e9%87%8d%e6%96%87%e4%bb%b6%e5%a3%b0%e7%a0%81%e5%99%a8%e7%9a%84%e7%81%b5%e9%ad%82%e4%bb%8e%e5%93%aa%e6%9d%a5 aria-label='五、.pth 权重文件：声码器的"灵魂"从哪来'>五、.pth 权重文件：声码器的"灵魂"从哪来</a><ul><li><a href=#51-pth-%e6%96%87%e4%bb%b6%e9%87%8c%e5%88%b0%e5%ba%95%e6%9c%89%e4%bb%80%e4%b9%88 aria-label="5.1 .pth 文件里到底有什么">5.1 .pth 文件里到底有什么</a></li><li><a href=#52-%e5%8a%a0%e8%bd%bd%e6%b5%81%e7%a8%8b%e4%bb%8e%e6%96%87%e4%bb%b6%e5%88%b0%e5%8f%af%e7%94%a8%e7%9a%84%e5%a3%b0%e7%a0%81%e5%99%a8 aria-label="5.2 加载流程：从文件到可用的声码器">5.2 加载流程：从文件到可用的声码器</a></li><li><a href=#53-%e6%8e%a8%e7%90%86%e6%97%b6%e6%9d%83%e9%87%8d%e6%98%af%e6%80%8e%e4%b9%88%e6%b5%81%e5%8a%a8%e7%9a%84 aria-label="5.3 推理时权重是怎么流动的">5.3 推理时权重是怎么流动的</a></li><li><a href=#54-index-%e6%96%87%e4%bb%b6%e5%92%8c%e7%89%b9%e5%be%81%e6%a3%80%e7%b4%a2 aria-label="5.4 .index 文件和特征检索">5.4 .index 文件和特征检索</a></li><li><a href=#55-%e8%ae%ad%e7%bb%83%e5%87%ba%e6%9d%a5%e7%9a%84%e6%9d%83%e9%87%8d%e5%af%b9%e5%a3%b0%e7%a0%81%e5%99%a8%e6%84%8f%e5%91%b3%e7%9d%80%e4%bb%80%e4%b9%88 aria-label="5.5 训练出来的权重对声码器意味着什么">5.5 训练出来的权重对声码器意味着什么</a></li></ul></li><li><a href=#%e5%85%ad%e4%b8%8d%e5%90%8c%e9%87%87%e6%a0%b7%e7%8e%87%e4%b8%8b%e7%9a%84%e9%85%8d%e7%bd%ae%e5%af%b9%e6%af%94%e8%a1%a5%e5%85%85 aria-label=六、不同采样率下的配置对比（补充）>六、不同采样率下的配置对比（补充）</a></li><li><a href=#%e4%b8%83%e4%bb%a3%e7%a0%81%e4%b8%ad%e5%80%bc%e5%be%97%e6%b3%a8%e6%84%8f%e7%9a%84%e5%ae%9e%e7%8e%b0%e7%bb%86%e8%8a%82 aria-label=七、代码中值得注意的实现细节>七、代码中值得注意的实现细节</a><ul><li><a href=#71-weight_norm-%e8%80%8c%e4%b8%8d%e6%98%af-batch_norm aria-label="7.1 weight_norm 而不是 batch_norm">7.1 weight_norm 而不是 batch_norm</a></li><li><a href=#72-leakyrelu-%e7%9a%84%e6%96%9c%e7%8e%87 aria-label="7.2 LeakyReLU 的斜率">7.2 LeakyReLU 的斜率</a></li><li><a href=#73-%e8%bd%ac%e7%bd%ae%e5%8d%b7%e7%a7%af%e7%9a%84-padding-%e8%ae%a1%e7%ae%97 aria-label="7.3 转置卷积的 padding 计算">7.3 转置卷积的 padding 计算</a></li><li><a href=#74-sinegen-%e4%b8%ad%e7%9a%84%e7%9b%b8%e4%bd%8d%e8%bf%9e%e7%bb%ad%e6%80%a7%e5%a4%84%e7%90%86 aria-label="7.4 SineGen 中的相位连续性处理">7.4 SineGen 中的相位连续性处理</a></li><li><a href=#75-torchjitscript-%e7%9a%84%e5%85%bc%e5%ae%b9%e5%a4%84%e7%90%86 aria-label="7.5 torch.jit.script 的兼容处理">7.5 torch.jit.script 的兼容处理</a></li></ul></li><li><a href=#%e5%85%ab%e5%9b%9e%e9%a1%be%e4%b8%ba%e4%bb%80%e4%b9%88-rvc-%e9%80%89%e6%8b%a9-nsf-hifi-gan aria-label="八、回顾：为什么 RVC 选择 NSF-HiFi-GAN">八、回顾：为什么 RVC 选择 NSF-HiFi-GAN</a></li><li><a href=#%e9%99%84%e5%bd%95-a%e5%85%b3%e9%94%ae%e7%b1%bb%e9%80%9f%e6%9f%a5%e8%a1%a8 aria-label="附录 A：关键类速查表">附录 A：关键类速查表</a></li><li><a href=#%e9%99%84%e5%bd%95-b%e8%bf%9b%e4%b8%80%e6%ad%a5%e9%98%85%e8%af%bb aria-label="附录 B：进一步阅读">附录 B：进一步阅读</a></li></ul></li></ul></div></div></div></div><script>function toggleTOCSidebar(){var e=document.getElementById("toc-sidebar"),t=document.getElementById("toc-overlay"),n=document.getElementById("toc-toggle-btn");e.classList.toggle("open"),t.classList.toggle("open"),n.classList.toggle("active")}document.addEventListener("DOMContentLoaded",function(){for(var t=document.querySelectorAll("#toc-sidebar .inner a"),e=0;e<t.length;e++)t[e].addEventListener("click",function(){toggleTOCSidebar()});document.addEventListener("keydown",function(e){e.key==="Escape"&&document.getElementById("toc-sidebar").classList.contains("open")&&toggleTOCSidebar()})})</script><div class=post-content><h1 id=从-hifi-gan-到-nsf-hifi-gan声码器学习笔记>从 HiFi-GAN 到 NSF-HiFi-GAN：声码器学习笔记<a hidden class=anchor aria-hidden=true href=#从-hifi-gan-到-nsf-hifi-gan声码器学习笔记>#</a></h1><blockquote><p>本文基于 RVC（Retrieval-based Voice Conversion）项目的实际代码，从零开始梳理 HiFi-GAN 声码器的原理，再过渡到 RVC 中真正使用的 NSF-HiFi-GAN 变体。
+代码位置：<code>infer/lib/infer_pack/models.py</code> 和 <code>infer/lib/infer_pack/modules.py</code></p></blockquote><hr><h2 id=一先搞清楚声码器在干什么>一、先搞清楚声码器在干什么<a hidden class=anchor aria-hidden=true href=#一先搞清楚声码器在干什么>#</a></h2><p>在语音合成或语音转换的流程里，声码器处在最后一环。它的上游会输出某种"中间表示"——可能是 mel 频谱图，也可能是某个隐空间的向量。声码器要做的事情就一件：<strong>把这个中间表示变回可以听的音频波形</strong>。</p><p>说得直白点：频谱图是一张"图"，声码器要把这张图"念"出来。</p><p>传统做法（Griffin-Lim 之类的）靠数学迭代来恢复相位信息，结果通常比较糊。HiFi-GAN 走的是神经网络的路线——用一个生成器直接输出波形采样点，同时用判别器来监督生成质量。</p><hr><h2 id=二hifi-gan-的基本结构>二、HiFi-GAN 的基本结构<a hidden class=anchor aria-hidden=true href=#二hifi-gan-的基本结构>#</a></h2><p>HiFi-GAN 的论文是 2020 年发的（Jungil Kong 等人），核心思路可以用一句话概括：</p><blockquote><p><strong>转置卷积做上采样，残差块做波形精炼，多尺度判别器做质量监督。</strong></p></blockquote><h3 id=21-生成器的整体流程>2.1 生成器的整体流程<a hidden class=anchor aria-hidden=true href=#21-生成器的整体流程>#</a></h3><p>在 RVC 的代码里，标准 HiFi-GAN 生成器对应的是 <code>Generator</code> 类（<code>models.py:204</code>）。它的结构其实很规整：</p><p><strong>HiFi-GAN 生成器结构（40kHz 配置为例）</strong></p><pre tabindex=0><code>┌─────────────────────────────────────────────────────────────┐
+│                    输入：隐变量 z                              │
+│                  [batch, 192, T帧]                           │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+            ┌────────────────────┐
+            │   预处理卷积层      │
+            │   Conv1d(192→512)  │ ← 把输入投射到高维空间
+            │   kernel_size=7     │
+            └────────┬───────────┘
+                     │
+        ┌────────────┴────────────┐
+        │   上采样 Stage 1 (×10)  │
+        │  ConvTranspose1d(512→256)│ ← 时间轴拉长到 T×10
+        └────────┬─────────────────┘
+                 │
+        ┌────────┴──────────────────────────────────┐
+        │    MRF (多感受野融合)                      │
+        │  ┌──────────┐  ┌──────────┐  ┌──────────┐│
+        │  │ResBlock  │  │ResBlock  │  │ResBlock  ││
+        │  │kernel=3  │  │kernel=7  │  │kernel=11 ││
+        │  └──────────┘  └──────────┘  └──────────┘│
+        │           输出取平均                        │
+        └────────┬──────────────────────────────────┘
+                 │
+        ┌────────┴────────────┐
+        │  上采样 Stage 2 (×10)│
+        │ ConvTranspose1d(256→128)│ ← 时间轴拉长到 T×100
+        └────────┬─────────────┘
+                 │
+        ┌────────┴──────────────────────────────────┐
+        │             MRF 融合                       │
+        │  ResBlock×3 (kernel=3/7/11) → 平均        │
+        └────────┬──────────────────────────────────┘
+                 │
+        ┌────────┴────────────┐
+        │  上采样 Stage 3 (×2) │
+        │ ConvTranspose1d(128→64)│ ← 时间轴拉长到 T×200
+        └────────┬─────────────┘
+                 │
+        ┌────────┴──────────────────────────────────┐
+        │             MRF 融合                       │
+        │  ResBlock×3 (kernel=3/7/11) → 平均        │
+        └────────┬──────────────────────────────────┘
+                 │
+        ┌────────┴────────────┐
+        │  上采样 Stage 4 (×2) │
+        │ ConvTranspose1d(64→32) │ ← 时间轴拉长到 T×400
+        └────────┬─────────────┘
+                 │
+        ┌────────┴──────────────────────────────────┐
+        │             MRF 融合                       │
+        │  ResBlock×3 (kernel=3/7/11) → 平均        │
+        └────────┬──────────────────────────────────┘
+                 │
+            ┌────┴────────────┐
+            │  后处理卷积层     │
+            │  Conv1d(32→1)   │ ← 压缩到单声道
+            │  kernel_size=7   │
+            └────┬─────────────┘
+                 │
+                 ▼
+            ┌────────────┐
+            │   Tanh     │ ← 限幅到 [-1, 1]
+            └─────┬──────┘
+                  │
+                  ▼
+        ┌──────────────────┐
+        │   输出波形         │
+        │ [batch, 1, T×400]│
+        └──────────────────┘
+</code></pre><p>上采样的总倍率 = 10 × 10 × 2 × 2 = <strong>400</strong>。这个数字等于 hop_length（帧移），含义是：输入的每一帧对应输出的 400 个采样点。对于 40kHz 采样率来说，一帧就是 10ms。</p><p>有两件事值得注意：</p><ol><li><strong>通道数逐级减半</strong>：512 → 256 → 128 → 64 → 32。分辨率在增加，通道数在减少，这跟图像领域的解码器思路一致。</li><li><strong>每个上采样阶段之后都跟着一组 ResBlock</strong>，而不是只放一个。这组 ResBlock 就是 HiFi-GAN 最核心的设计之一——MRF。</li></ol><h3 id=22-mrf多感受野融合>2.2 MRF：多感受野融合<a hidden class=anchor aria-hidden=true href=#22-mrf多感受野融合>#</a></h3><p>MRF 的全称是 Multi-Receptive Field Fusion。思路也很朴素：<strong>用不同大小的卷积核去观察不同范围的上下文，然后把结果加起来取平均</strong>。</p><p>在 RVC 的配置（<code>configs/v1/40k.json</code>）里，resblock_kernel_sizes 是 <code>[3, 7, 11]</code>，所以每个上采样阶段后面并排放了 3 个 ResBlock，分别用 kernel_size=3、7、11。</p><p><strong>MRF 多感受野融合示意图</strong></p><pre tabindex=0><code>                    上采样后的特征 x
+                          │
+          ┌───────────────┼───────────────┐
+          │               │               │
+          ▼               ▼               ▼
+    ┌──────────┐    ┌──────────┐    ┌──────────┐
+    │ResBlock1 │    │ResBlock2 │    │ResBlock3 │
+    │kernel=3  │    │kernel=7  │    │kernel=11 │
+    │(看近处)  │    │(看中距)  │    │(看远处)  │
+    └────┬─────┘    └────┬─────┘    └────┬─────┘
+         │               │               │
+         └───────────────┴───────────────┘
+                         │
+                    三路相加求平均
+                         │
+                         ▼
+                    融合后的输出
+</code></pre><p>小 kernel（3）看局部细节，大 kernel（11）看更长的上下文。融合后既保留了细节纹理，也保持了长距离的连贯性。</p><h3 id=23-resblock膨胀卷积的堆叠>2.3 ResBlock：膨胀卷积的堆叠<a hidden class=anchor aria-hidden=true href=#23-resblock膨胀卷积的堆叠>#</a></h3><p>RVC 默认用的是 <code>ResBlock1</code>（<code>modules.py:252</code>），它的内部结构是：</p><p><strong>ResBlock1 内部结构（三轮串行处理）</strong></p><pre tabindex=0><code>输入 x
+  │
+  ├──────────────────────────┐
+  │                          │
+  │  ┌────────────────────┐  │
+  │  │  LeakyReLU         │  │
+  │  │  DilatedConv(d=1)  │  │  第一轮：膨胀率 1
+  │  │  LeakyReLU         │  │  感受野：3
+  │  │  Conv(d=1)         │  │
+  │  └──────────┬─────────┘  │
+  │             │            │
+  └─────────────┼────────────┘
+                │  (残差相加)
+                ▼
+  ┌──────────────────────────┐
+  │                          │
+  │  ┌────────────────────┐  │
+  │  │  LeakyReLU         │  │
+  │  │  DilatedConv(d=3)  │  │  第二轮：膨胀率 3
+  │  │  LeakyReLU         │  │  感受野：7
+  │  │  Conv(d=1)         │  │
+  │  └──────────┬─────────┘  │
+  │             │            │
+  └─────────────┼────────────┘
+                │  (残差相加)
+                ▼
+  ┌──────────────────────────┐
+  │                          │
+  │  ┌────────────────────┐  │
+  │  │  LeakyReLU         │  │
+  │  │  DilatedConv(d=5)  │  │  第三轮：膨胀率 5
+  │  │  LeakyReLU         │  │  感受野：11
+  │  │  Conv(d=1)         │  │
+  │  └──────────┬─────────┘  │
+  │             │            │
+  └─────────────┼────────────┘
+                │  (残差相加)
+                ▼
+             输出
+</code></pre><p><strong>膨胀卷积原理</strong></p><ul><li>dilation=1 时感受野是 3（标准卷积）</li><li>dilation=3 时感受野是 7（跳着看，覆盖更远）</li><li>dilation=5 时感受野是 11（跳得更远，看得更宽）</li></ul><p>这样一个 ResBlock 内部就覆盖了多种尺度。再加上 MRF 层面的多 kernel 并行，HiFi-GAN 等于在"感受野"这件事上下了双重功夫。</p><p>每一层卷积都用了 <code>weight_norm</code>——这是 HiFi-GAN 的另一个特点，用权重归一化代替 BatchNorm，生成质量更稳定。</p><p>还有一种更轻量的 <code>ResBlock2</code>（<code>modules.py:367</code>），只有两轮、每轮只有一层膨胀卷积。配置文件里 <code>"resblock": "1"</code> 表示用 ResBlock1，设成 <code>"2"</code> 就用 ResBlock2。RVC 默认用的是 1。</p><h3 id=24-判别器训练用>2.4 判别器（训练用）<a hidden class=anchor aria-hidden=true href=#24-判别器训练用>#</a></h3><p>生成器只管"生成"，判别器负责"挑毛病"。HiFi-GAN 用了两种判别器组合：</p><p><strong>Multi-Period Discriminator（MPD）</strong>：把一维波形按不同周期（2, 3, 5, 7, 11, 17）折叠成二维，然后用 2D 卷积判别。不同的周期能捕获不同频率成分的规律性。</p><p><strong>Multi-Scale Discriminator（MSD）</strong>：在原始波形和降采样后的波形上分别做判别，关注不同时间尺度的真实感。</p><p>在 RVC 代码里，这两者合并成了 <code>MultiPeriodDiscriminator</code>（<code>models.py:1052</code>），里面同时包含了一个 <code>DiscriminatorS</code>（MSD 的角色）和多个 <code>DiscriminatorP</code>（MPD 的角色）。</p><p>判别器在推理阶段不参与，但训练阶段是不可缺的。</p><h3 id=25-小结标准-hifi-gan-的特点>2.5 小结：标准 HiFi-GAN 的特点<a hidden class=anchor aria-hidden=true href=#25-小结标准-hifi-gan-的特点>#</a></h3><ul><li>生成速度快（全卷积，没有自回归）</li><li>音质好（GAN 训练 + 多尺度判别）</li><li>结构简洁（上采样 + ResBlock + 判别器，没有过于复杂的组件）</li></ul><p>但它有一个问题：<strong>对音高（F0）的控制是隐式的</strong>。生成器只接收中间表示，音高信息完全靠网络自己从数据中学习。对于语音转换这种需要精确控制音高的任务来说，这还不够。</p><hr><h2 id=三nsf-hifi-gan加入显式的音高控制>三、NSF-HiFi-GAN：加入显式的音高控制<a hidden class=anchor aria-hidden=true href=#三nsf-hifi-gan加入显式的音高控制>#</a></h2><p>NSF 的全称是 Neural Source-Filter。这个名字来自语音学中经典的"源-滤波器"模型：</p><blockquote><p>人类的发声可以分解为两个部分：声带振动产生的<strong>源信号</strong>（周期性的脉冲），和声道共振形成的<strong>滤波器</strong>（塑造音色）。</p></blockquote><p>NSF-HiFi-GAN 做的事情就是把这个物理直觉引入神经网络：用 F0 生成一个显式的周期性源信号，注入到 HiFi-GAN 的生成过程中。这样网络就不用"猜"音高了，音高由输入直接决定。</p><p>RVC 中的 NSF-HiFi-GAN 对应 <code>GeneratorNSF</code> 类（<code>models.py:448</code>）。</p><h3 id=31-生成源信号sinegen-和-sourcemodulehnnsf>3.1 生成源信号：SineGen 和 SourceModuleHnNSF<a hidden class=anchor aria-hidden=true href=#31-生成源信号sinegen-和-sourcemodulehnnsf>#</a></h3><p>源信号的生成分两步。</p><p><strong>第一步：SineGen（正弦波生成器，<code>models.py:312</code>）</strong></p><p>SineGen 的输入是 F0 序列，输出是对应频率的正弦波。</p><p><strong>SineGen 工作流程</strong></p><pre tabindex=0><code>┌──────────────────────────────────────────────────────┐
+│  输入：F0 序列 [batch, T]                             │
+│  (每个时刻的基频，单位 Hz)                            │
+└────────────────┬─────────────────────────────────────┘
+                 │
+                 ▼
+    ┌────────────────────────────┐
+    │  1. F0 → 相位增量           │
+    │     phase_inc = F0 / sr    │  (除以采样率)
+    └──────────┬─────────────────┘
+               │
+               ▼
+    ┌────────────────────────────┐
+    │  2. 累积相位 (cumsum)       │
+    │     保证相位连续不跳变      │  ← 避免&#34;咔哒&#34;声
+    └──────────┬─────────────────┘
+               │
+               ▼
+    ┌────────────────────────────┐
+    │  3. sin(2π × phase)        │
+    │     生成正弦波              │
+    └──────────┬─────────────────┘
+               │
+               ▼
+    ┌────────────────────────────────────┐
+    │  4. 浊音/清音判断                   │
+    │  ┌────────────┬────────────┐       │
+    │  │ F0 &gt; 0     │  F0 = 0    │       │
+    │  │ (浊音)     │  (清音)    │       │
+    │  ├────────────┼────────────┤       │
+    │  │ 正弦波     │  纯噪声    │       │
+    │  │ + 微噪声   │            │       │
+    │  └────────────┴────────────┘       │
+    └────────────────┬───────────────────┘
+                     │
+                     ▼
+    ┌─────────────────────────────────┐
+    │  输出：sine_waves, uv, noise     │
+    │  [batch, T×upp, harmonic_num+1] │
+    └─────────────────────────────────┘
+</code></pre><p>核心逻辑：</p><ol><li>把 F0（单位 Hz）除以采样率，得到每个采样点的相位增量</li><li>通过 <code>cumsum</code>（累积求和）得到连续的相位序列</li><li>取 <code>sin(2π × phase)</code> 得到正弦波</li></ol><p>为什么要用 cumsum 而不是直接算？因为 F0 在时间轴上是变化的。如果每帧独立计算，帧与帧之间的相位会不连续，产生"咔哒"声。cumsum 保证了相位的连续累积。</p><p><strong>浊音vs清音的物理含义</strong></p><ul><li><strong>浊音段</strong>（F0 > 0）：输出正弦波 + 微量噪声（std=0.003）<ul><li>对应声带周期性振动产生的元音、鼻音等</li></ul></li><li><strong>清音段</strong>（F0 = 0）：输出纯噪声（幅度 = sine_amp / 3）<ul><li>对应气流湍流产生的摩擦音、清音等</li></ul></li></ul><p>SineGen 还支持泛音（harmonics），不过 RVC 里 <code>harmonic_num=0</code>，所以只生成基频，没有泛音。</p><p><strong>第二步：SourceModuleHnNSF（源模块，<code>models.py:391</code>）</strong></p><p>这一层包装了 SineGen，做了两件事：</p><p><strong>SourceModuleHnNSF 结构</strong></p><pre tabindex=0><code>┌──────────────────────────────────────┐
+│  输入：F0 [batch, T], upp=400        │
+└──────────────┬───────────────────────┘
+               │
+               ▼
+    ┌──────────────────────┐
+    │      SineGen         │
+    │  生成多个谐波正弦波   │  ← 可能有多个谐波通道
+    └──────────┬───────────┘
+               │
+               ▼
+    ┌──────────────────────────────┐
+    │  Linear(harmonic_num+1, 1)   │  ← 把多个谐波混合成单通道
+    │  (可学习的权重)               │
+    └──────────┬───────────────────┘
+               │
+               ▼
+    ┌──────────────────────┐
+    │       Tanh           │  ← 限幅到 [-1, 1]
+    └──────────┬───────────┘
+               │
+               ▼
+    ┌──────────────────────┐
+    │  输出：har_source    │
+    │  [batch, T×400, 1]   │  ← 单通道激励信号
+    └──────────────────────┘
+</code></pre><p>在 RVC 的默认配置下只有基频（harmonic_num=0），所以这个 Linear 层实际上就是一个标量缩放。但设计上保留了扩展性——如果以后想加泛音，只需要改一个参数。</p><h3 id=32-谐波注入generatornsf-的关键改动>3.2 谐波注入：GeneratorNSF 的关键改动<a hidden class=anchor aria-hidden=true href=#32-谐波注入generatornsf-的关键改动>#</a></h3><p><code>GeneratorNSF</code> 和标准 <code>Generator</code> 的骨架几乎一样——相同的上采样层，相同的 ResBlock，相同的 conv_pre/conv_post。关键区别在于多了一套 <code>noise_convs</code>，用于在每个上采样阶段注入源信号。</p><p><strong>GeneratorNSF 前向过程概览</strong></p><pre tabindex=0><code>步骤1：生成源信号
+┌──────────────────────────────────┐
+│  F0 → SourceModuleHnNSF         │
+│  输出：har_source [B, 1, T×400]  │  ← 保持最终输出的分辨率
+└──────────────┬───────────────────┘
+               │
+               │ (全程保持这个分辨率)
+               │
+步骤2：隐变量处理           │
+┌───────────────┐            │
+│  z [B,192,T]  │            │
+└──────┬────────┘            │
+       │                     │
+       ▼                     │
+  conv_pre(192→512)          │
+       │                     │
+       │                     │
+步骤3：逐级上采样+谐波注入    │
+       │                     │
+       ▼                     ▼
+  ┌─────────────────────────────────┐
+  │  Stage 0: 上采样 ×10             │
+  │  ups[0]: 512→256                │
+  │         + noise_conv[0](stride=40) ← 从 har_source 下采样
+  │         = x + x_source           │   每40个点取1个匹配当前分辨率
+  │  → MRF(ResBlock×3)               │
+  └──────────┬──────────────────────┘
+             │
+             ▼
+  ┌─────────────────────────────────┐
+  │  Stage 1: 上采样 ×10             │
+  │  ups[1]: 256→128                │
+  │         + noise_conv[1](stride=4) ← 从 har_source 下采样
+  │         = x + x_source           │   每4个点取1个
+  │  → MRF(ResBlock×3)               │
+  └──────────┬──────────────────────┘
+             │
+             ▼
+  ┌─────────────────────────────────┐
+  │  Stage 2: 上采样 ×2              │
+  │  ups[2]: 128→64                 │
+  │         + noise_conv[2](stride=2) ← 从 har_source 下采样
+  │         = x + x_source           │   每2个点取1个
+  │  → MRF(ResBlock×3)               │
+  └──────────┬──────────────────────┘
+             │
+             ▼
+  ┌─────────────────────────────────┐
+  │  Stage 3: 上采样 ×2              │
+  │  ups[3]: 64→32                  │
+  │         + noise_conv[3](stride=1) ← 从 har_source 直接用
+  │         = x + x_source           │   不再下采样
+  │  → MRF(ResBlock×3)               │
+  └──────────┬──────────────────────┘
+             │
+             ▼
+  ┌─────────────────────┐
+  │  conv_post(32→1)    │
+  │  Tanh               │
+  └──────────┬──────────┘
+             │
+             ▼
+  ┌──────────────────┐
+  │  输出波形          │
+  │  [B, 1, T×400]   │
+  └──────────────────┘
+</code></pre><p>这里有个细节很关键：<strong>源信号（har_source）始终保持在最终输出的采样率上</strong>（比如 40000 个采样点/秒），而上采样过程中的 <code>x</code> 的时间分辨率是逐级增加的。所以每个阶段的 <code>noise_convs</code> 需要把全分辨率的源信号<strong>下采样</strong>到当前阶段的分辨率。</p><p><strong>noise_conv 的 stride 计算逻辑</strong></p><p>以 40kHz 配置（upsample_rates = [10, 10, 2, 2]）为例：</p><table><thead><tr><th>上采样阶段</th><th>上采样倍率</th><th>x 的时间分辨率</th><th>noise_conv 的 stride</th><th>含义</th></tr></thead><tbody><tr><td>0</td><td>×10</td><td>T×10</td><td>10×2×2 = 40</td><td>源信号每 40 个点取 1 个</td></tr><tr><td>1</td><td>×10</td><td>T×100</td><td>2×2 = 4</td><td>源信号每 4 个点取 1 个</td></tr><tr><td>2</td><td>×2</td><td>T×200</td><td>2</td><td>源信号每 2 个点取 1 个</td></tr><tr><td>3</td><td>×2</td><td>T×400</td><td>1 (kernel=1)</td><td>源信号直接用</td></tr></tbody></table><p>注意：noise_conv 不只是简单的下采样，它同时把 1 通道扩展到了 c_cur 通道（256 / 128 / 64 / 32），这样才能跟 <code>x</code> 直接相加。这个卷积的参数是可学习的，网络可以自己决定怎么利用源信号的信息。</p><h3 id=33-用一张图看全貌>3.3 用一张图看全貌<a hidden class=anchor aria-hidden=true href=#33-用一张图看全貌>#</a></h3><p>把上面的内容组合起来，GeneratorNSF 在 40kHz 配置下的完整数据流是：</p><pre tabindex=0><code>F0 [batch, T]
+  │
+  ├── Upsample(×400) ──→ SourceModuleHnNSF ──→ har_source [batch, 1, T×400]
+  │                                                │
+  │                    ┌───────────────────────────┤（全程保持最高分辨率）
+  │                    │                           │
+z [batch, 192, T]      │                           │
+  │                    │                           │
+  ▼                    │                           │
+conv_pre(192→512)      │                           │
+  │                    │                           │
+  ▼                    ▼                           │
+Stage 0: ×10上采样   noise_conv(stride=40)         │
+  [512→256]            [1→256]                     │
+  x = x + x_source ◄──┘                           │
+  → MRF(3 ResBlocks, k=3/7/11)                    │
+  │                                                │
+  ▼                                                ▼
+Stage 1: ×10上采样                     noise_conv(stride=4)
+  [256→128]                              [1→128]
+  x = x + x_source ◄────────────────────┘
+  → MRF(3 ResBlocks, k=3/7/11)
+  │
+  ▼
+Stage 2: ×2上采样                      noise_conv(stride=2)
+  [128→64]                               [1→64]
+  x = x + x_source ◄────────────────────┘
+  → MRF(3 ResBlocks, k=3/7/11)
+  │
+  ▼
+Stage 3: ×2上采样                      noise_conv(stride=1)
+  [64→32]                                [1→32]
+  x = x + x_source ◄────────────────────┘
+  → MRF(3 ResBlocks, k=3/7/11)
+  │
+  ▼
+conv_post(32→1) → tanh → 输出波形 [batch, 1, T×400]
+</code></pre><h3 id=34-说话人条件gin_channels>3.4 说话人条件（gin_channels）<a hidden class=anchor aria-hidden=true href=#34-说话人条件gin_channels>#</a></h3><p>RVC 还支持多说话人。<code>GeneratorNSF</code> 里有一个可选的说话人条件注入层。</p><p><strong>说话人条件注入示意</strong></p><pre tabindex=0><code>┌────────────────────────────┐
+│  说话人嵌入 g              │
+│  [batch, gin_channels, 1]  │  ← 从 emb_g 查表得到
+└──────────┬─────────────────┘
+           │
+           ▼
+    ┌──────────────────┐
+    │  1×1 卷积映射     │
+    │  gin_ch → 512    │  ← 映射到与 conv_pre 输出相同的维度
+    └──────────┬───────┘
+               │
+               │
+  隐变量 z ────┼────→ conv_pre(192→512)
+               │              │
+               └──────────────┤
+                              ▼
+                          x + cond(g)  ← 直接相加
+                              │
+                              ▼
+                    后续所有上采样和ResBlock处理
+                    都在&#34;带有说话人特征&#34;的基础上进行
+</code></pre><p>这意味着说话人信息在最开始就注入了，后续所有上采样和 ResBlock 处理都是在"带有说话人特征"的基础上进行的。</p><hr><h2 id=四generatornsf-在-rvc-系统中的位置>四、GeneratorNSF 在 RVC 系统中的位置<a hidden class=anchor aria-hidden=true href=#四generatornsf-在-rvc-系统中的位置>#</a></h2><p>声码器不是孤立存在的。在 RVC 里，它被嵌入到一个完整的 VITS 风格的框架中。以 <code>SynthesizerTrnMs256NSFsid</code>（<code>models.py:602</code>）为例：</p><pre tabindex=0><code>完整的推理流程：
+
+phone（语音特征，256 维）   pitch（音高序号）   sid（说话人 ID）
+        │                        │                  │
+        ▼                        ▼                  ▼
+      TextEncoder ──────────────────────────→ (μ, σ)    emb_g → g
+        │                                                │
+        ▼                                                │
+    采样 z_p ~ N(μ, σ)                                   │
+        │                                                │
+        ▼                                                │
+    ResidualCouplingBlock (flow, reverse=True)  ◄────── g
+        │
+        ▼
+      z（隐变量）
+        │
+        ▼                F0（连续的基频值 nsff0）
+    GeneratorNSF(z, f0, g) ◄─────────────────┘
+        │
+        ▼
+    输出波形
+</code></pre><ul><li><strong>TextEncoder</strong>：把 phone 特征（+ pitch 嵌入）编码成高斯分布的均值和方差</li><li><strong>ResidualCouplingBlock</strong>：一个 normalizing flow 模块，在推理时做逆变换，把先验分布的采样转换到隐空间</li><li><strong>GeneratorNSF</strong>：我们分析的声码器，接收 flow 输出的隐变量 <code>z</code> 和连续的 F0 值 <code>nsff0</code>，生成最终波形</li></ul><p>训练时还有一个 <strong>PosteriorEncoder</strong>，它直接从 mel 频谱编码出后验分布，用于计算 KL 散度 loss，推理时不用。</p><p>RVC 提供了四种合成器变体：</p><table><thead><tr><th>类名</th><th>phone 维度</th><th>是否使用 F0</th><th>解码器</th></tr></thead><tbody><tr><td><code>SynthesizerTrnMs256NSFsid</code></td><td>256</td><td>是</td><td>GeneratorNSF</td></tr><tr><td><code>SynthesizerTrnMs768NSFsid</code></td><td>768</td><td>是</td><td>GeneratorNSF</td></tr><tr><td><code>SynthesizerTrnMs256NSFsid_nono</code></td><td>256</td><td>否</td><td>Generator（标准）</td></tr><tr><td><code>SynthesizerTrnMs768NSFsid_nono</code></td><td>768</td><td>否</td><td>Generator（标准）</td></tr></tbody></table><p>256 和 768 的区别在于上游特征提取器的输出维度（256 对应 HuBERT base，768 对应 HuBERT large 等）。</p><p>带 &ldquo;nono&rdquo; 后缀的版本不使用 F0，也就不需要 NSF——它们直接用标准的 HiFi-GAN Generator。这种模式音高控制差一些，但不需要提取 F0，适合对音高没有严格要求的场景。</p><hr><h2 id=五pth-权重文件声码器的灵魂从哪来>五、.pth 权重文件：声码器的"灵魂"从哪来<a hidden class=anchor aria-hidden=true href=#五pth-权重文件声码器的灵魂从哪来>#</a></h2><p>到目前为止我们一直在看网络结构——但结构只是骨架。一个 <code>GeneratorNSF</code> 刚创建出来的时候，所有卷积核的权重都是随机初始化的，它什么都不会。真正让声码器能生成逼真语音的，是训练好的权重参数，保存在 <code>.pth</code> 文件里。</p><p>理解 <code>.pth</code> 文件的结构和加载流程，对于理解声码器的实际运行至关重要。</p><h3 id=51-pth-文件里到底有什么>5.1 .pth 文件里到底有什么<a hidden class=anchor aria-hidden=true href=#51-pth-文件里到底有什么>#</a></h3><p>RVC 的语音模型文件（比如用户训练出来的 <code>xxx_e200_s8000.pth</code>）并不是只存了声码器的权重——它存的是<strong>整个合成器</strong>的完整快照。</p><p><strong>.pth 文件结构</strong></p><pre tabindex=0><code>┌─────────────────────────────────────────────┐
+│           .pth 文件 (PyTorch 检查点)         │
+├─────────────────────────────────────────────┤
+│                                             │
+│  ┌─────────────────────────────────────┐   │
+│  │  &#34;weight&#34; (state_dict)              │   │
+│  │  ├─ enc_p.*      ← TextEncoder      │   │
+│  │  ├─ dec.*        ← GeneratorNSF     │   │  ★ 声码器权重
+│  │  ├─ flow.*       ← Flow模块         │   │
+│  │  └─ emb_g.weight ← 说话人嵌入       │   │
+│  └─────────────────────────────────────┘   │
+│                                             │
+│  ┌─────────────────────────────────────┐   │
+│  │  &#34;config&#34; (列表, 18个元素)           │   │
+│  │  [0] spec_channels     = 1025       │   │
+│  │  [1] segment_size      = 12800      │   │
+│  │  [2] inter_channels    = 192        │   │
+│  │  ...                                │   │
+│  │  [9] resblock          = &#34;1&#34;        │   │
+│  │  [10] resblock_kernel_sizes = [3,7,11] │
+│  │  [11] resblock_dilation_sizes       │   │
+│  │  [12] upsample_rates   = [10,10,2,2]│   │  ★ 声码器结构参数
+│  │  [13] upsample_initial_channel=512  │   │
+│  │  [14] upsample_kernel_sizes         │   │
+│  │  [15] spk_embed_dim    = 109        │   │
+│  │  [16] gin_channels     = 256        │   │
+│  │  [17] sr               = 40000      │   │
+│  └─────────────────────────────────────┘   │
+│                                             │
+│  ┌─────────────────────────────────────┐   │
+│  │  &#34;f0&#34;       = 1 (是否使用F0)         │   │
+│  │  &#34;version&#34;  = &#34;v1&#34; (模型版本)        │   │
+│  │  &#34;info&#34;     = &#34;epoch_200_step_8000&#34; │   │
+│  └─────────────────────────────────────┘   │
+│                                             │
+└─────────────────────────────────────────────┘
+</code></pre><p><em><em>weight 字典中的声码器权重（dec.</em> 前缀）</em>*</p><pre tabindex=0><code>┌─────────────────────────────────────────────────────┐
+│  dec.conv_pre.weight           ← 预卷积层           │
+│  dec.conv_pre.bias                                  │
+├─────────────────────────────────────────────────────┤
+│  dec.ups.0.weight              ← 第0级上采样        │
+│  dec.ups.0.bias                                     │
+│  dec.ups.1.weight              ← 第1级上采样        │
+│  dec.ups.1.bias                                     │
+│  dec.ups.2.weight              ← 第2级上采样        │
+│  dec.ups.2.bias                                     │
+│  dec.ups.3.weight              ← 第3级上采样        │
+│  dec.ups.3.bias                                     │
+├─────────────────────────────────────────────────────┤
+│  dec.noise_convs.0.weight      ← 第0级谐波注入      │
+│  dec.noise_convs.0.bias                             │
+│  dec.noise_convs.1.weight      ← 第1级谐波注入      │
+│  dec.noise_convs.1.bias                             │
+│  dec.noise_convs.2.weight      ← 第2级谐波注入      │
+│  dec.noise_convs.2.bias                             │
+│  dec.noise_convs.3.weight      ← 第3级谐波注入      │
+│  dec.noise_convs.3.bias                             │
+├─────────────────────────────────────────────────────┤
+│  dec.resblocks.0.convs1.0.weight  ← ResBlock膨胀卷积│
+│  dec.resblocks.0.convs1.0.bias                      │
+│  dec.resblocks.0.convs2.0.weight                    │
+│  dec.resblocks.0.convs2.0.bias                      │
+│  ...（每个上采样阶段后有3个ResBlock）                │
+├─────────────────────────────────────────────────────┤
+│  dec.m_source.l_linear.weight  ← 谐波混合层         │
+│  dec.m_source.l_linear.bias                         │
+├─────────────────────────────────────────────────────┤
+│  dec.conv_post.weight          ← 后卷积层           │
+│  dec.conv_post.bias                                 │
+└─────────────────────────────────────────────────────┘
+</code></pre><p><strong>注意</strong>：<code>dec.*</code> 开头的就是声码器 <code>GeneratorNSF</code> 的权重。声码器的上采样卷积、noise_convs、所有 ResBlock、SourceModule 的线性层——全部保存在这个 <code>.pth</code> 文件里。</p><p><strong>config 列表（决定网络结构）</strong></p><pre tabindex=0><code>┌──────┬────────────────────────────┬─────────────────────────┐
+│ 索引 │ 参数名                     │ 示例值（40kHz）          │
+├──────┼────────────────────────────┼─────────────────────────┤
+│ [0]  │ spec_channels              │ 1025                    │
+│ [1]  │ segment_size               │ 12800                   │
+│ [2]  │ inter_channels             │ 192                     │
+│ [3]  │ hidden_channels            │ 192                     │
+│ [4]  │ filter_channels            │ 768                     │
+│ [5]  │ n_heads                    │ 2                       │
+│ [6]  │ n_layers                   │ 6                       │
+│ [7]  │ kernel_size                │ 3                       │
+│ [8]  │ p_dropout                  │ 0                       │
+├──────┼────────────────────────────┼─────────────────────────┤
+│ [9]  │ resblock                   │ &#34;1&#34;                     │ ◄─┐
+│ [10] │ resblock_kernel_sizes      │ [3, 7, 11]              │   │
+│ [11] │ resblock_dilation_sizes    │ [[1,3,5], [1,3,5], ...] │   │ 声码器
+│ [12] │ upsample_rates             │ [10, 10, 2, 2]          │   │ 结构
+│ [13] │ upsample_initial_channel   │ 512                     │   │ 参数
+│ [14] │ upsample_kernel_sizes      │ [16, 16, 4, 4]          │   │
+├──────┼────────────────────────────┼─────────────────────────┤ ◄─┘
+│ [15] │ spk_embed_dim              │ 109                     │
+│ [16] │ gin_channels               │ 256                     │
+│ [17] │ sr                         │ 40000                   │
+└──────┴────────────────────────────┴─────────────────────────┘
+</code></pre><p>其中索引 [9] 到 [14] 直接决定了声码器 <code>GeneratorNSF</code> 的内部结构——用哪种 ResBlock、上采样几级、每级多少倍率、通道数多少。这些参数一旦确定，声码器的网络结构就被完全固定了。</p><h3 id=52-加载流程从文件到可用的声码器>5.2 加载流程：从文件到可用的声码器<a hidden class=anchor aria-hidden=true href=#52-加载流程从文件到可用的声码器>#</a></h3><p>加载过程在 <code>infer/modules/vc/modules.py:103-127</code> 的 <code>get_vc()</code> 方法中完成。</p><p><strong>四步加载流程</strong></p><pre tabindex=0><code>┌─────────────────────────────────────────────┐
+│ 步骤1：读取文件，解析元信息                   │
+├─────────────────────────────────────────────┤
+│  torch.load(&#34;model.pth&#34;)                    │
+│  ├─ 读取 config[-1] → tgt_sr (采样率)       │
+│  ├─ 读取 emb_g.weight.shape[0] → n_spk     │  ★ 直接看嵌入表行数
+│  ├─ 读取 f0 → if_f0 (是否用F0)              │
+│  └─ 读取 version → &#34;v1&#34;或&#34;v2&#34;               │
+└─────────────────┬───────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────┐
+│ 步骤2：根据版本和F0选项，创建合成器空壳      │
+├─────────────────────────────────────────────┤
+│  选择合成器类：                              │
+│  ┌────────────────┬─────────────────────┐   │
+│  │  v1 + F0=1     │ SynthesizerTrnMs256NSFsid     │
+│  │  v1 + F0=0     │ SynthesizerTrnMs256NSFsid_nono│
+│  │  v2 + F0=1     │ SynthesizerTrnMs768NSFsid     │
+│  │  v2 + F0=0     │ SynthesizerTrnMs768NSFsid_nono│
+│  └────────────────┴─────────────────────┘   │
+│                                             │
+│  用 config 列表参数构建模型                  │
+│  (此时权重还是随机值)                        │
+└─────────────────┬───────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────┐
+│ 步骤3：删掉推理不需要的模块，加载权重        │
+├─────────────────────────────────────────────┤
+│  del self.net_g.enc_q                       │  ← 后验编码器只在训练时用
+│  self.net_g.load_state_dict(                │
+│      cpt[&#34;weight&#34;],                         │
+│      strict=False                           │  ← 允许缺失的 enc_q.*
+│  )                                          │
+└─────────────────┬───────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────┐
+│ 步骤4：设置精度，移到目标设备                │
+├─────────────────────────────────────────────┤
+│  self.net_g.eval()                          │  ← 切换到评估模式
+│  self.net_g.to(device)                      │  ← CPU/CUDA/MPS
+│  if is_half:                                │
+│      self.net_g.half()    # FP16推理        │
+│  else:                                      │
+│      self.net_g.float()   # FP32推理        │
+└─────────────────┬───────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────┐
+│  声码器就绪（作为 self.net_g.dec）           │
+│  带着训练好的权重，可以开始推理              │
+└─────────────────────────────────────────────┘
+</code></pre><h3 id=53-推理时权重是怎么流动的>5.3 推理时权重是怎么流动的<a hidden class=anchor aria-hidden=true href=#53-推理时权重是怎么流动的>#</a></h3><p>加载完成后，推理走的是这条路径（<code>pipeline.py:186-279</code>）：</p><pre tabindex=0><code>原始音频 (16kHz)
+  │
+  ├──→ HuBERT (assets/hubert/hubert_base.pt)
+  │     提取语音内容特征 feats [batch, T, 256/768]
+  │
+  ├──→ RMVPE (assets/rmvpe/rmvpe.pt)
+  │     提取 F0 基频曲线 → pitch (量化) + pitchf (连续)
+  │
+  ├──→ FAISS Index (.index 文件)
+  │     用特征检索替换部分 feats，融入目标说话人的音色
+  │
+  └──→ net_g.infer(feats, p_len, pitch, pitchf, sid)
+        │
+        ├── TextEncoder: feats + pitch → z_p（先验隐变量）
+        ├── Flow (reverse): z_p → z（解码用的隐变量）
+        ├── GeneratorNSF: z + pitchf + speaker_emb → 波形
+        │     │
+        │     ├── dec.conv_pre: z 投射到高维
+        │     ├── dec.cond: 注入说话人嵌入
+        │     ├── dec.m_source: pitchf → 谐波激励源
+        │     ├── dec.ups + dec.noise_convs: 上采样 + 谐波注入
+        │     ├── dec.resblocks: MRF 波形精炼
+        │     └── dec.conv_post + tanh: 输出波形
+        │
+        └──→ 输出音频波形
+</code></pre><p>可以看到，除了语音模型自身的 <code>.pth</code> 文件，推理过程还依赖另外两个预训练模型：</p><ul><li><strong>HuBERT</strong>（<code>assets/hubert/hubert_base.pt</code>）：Facebook 的自监督语音表示模型，负责从原始音频中提取"说了什么"的内容特征（但不包含音色信息）</li><li><strong>RMVPE</strong>（<code>assets/rmvpe/rmvpe.pt</code>）：F0 估计模型，提取"唱/说的音高是多少"</li></ul><p>这三者的分工很明确：HuBERT 管内容，RMVPE 管音高，语音模型 <code>.pth</code> 管"怎么用目标说话人的声音把这些内容和音高重新合成出来"。</p><h3 id=54-index-文件和特征检索>5.4 .index 文件和特征检索<a hidden class=anchor aria-hidden=true href=#54-index-文件和特征检索>#</a></h3><p>除了 <code>.pth</code> 之外，RVC 推理时还会用到一个 <code>.index</code> 文件。这不是声码器的权重，而是一个 FAISS 向量索引。</p><p>它的作用发生在特征空间，在声码器之前：</p><p><strong>特征检索流程</strong></p><pre tabindex=0><code>┌──────────────────────────────────┐
+│  输入音频 HuBERT 特征             │
+│  [batch, T, 256/768]             │
+└──────────┬───────────────────────┘
+           │
+           ▼
+┌──────────────────────────────────┐
+│  FAISS Index 检索                 │
+│  search(feats, k=8)              │  ← 找最近的8个邻居
+└──────────┬───────────────────────┘
+           │
+           ▼
+┌──────────────────────────────────┐
+│  加权平均                         │
+│  weight = 1 / distance²          │  ← 距离越近权重越大
+│  retrieved = Σ(neighbors × w)    │
+└──────────┬───────────────────────┘
+           │
+           ▼
+┌──────────────────────────────────────────┐
+│  混合原始特征和检索特征                   │
+│  final_feats = retrieved × index_rate    │
+│               + orig_feats × (1-rate)    │
+└──────────┬───────────────────────────────┘
+           │
+           ▼
+    送入 TextEncoder 和 声码器
+</code></pre><p><strong>index_rate 参数的影响</strong></p><ul><li>index_rate = 0：完全使用原始特征，保持输入音色</li><li>index_rate = 1：完全使用检索特征，最像目标说话人</li><li>index_rate = 0.75（常用）：平衡音色转换和细节保留</li></ul><p>这个检索过程跟声码器没有直接关系，但它决定了声码器接收到的输入质量。如果检索做得好，送进 GeneratorNSF 的隐变量就已经很接近目标说话人了，声码器只需要忠实地合成就行。</p><h3 id=55-训练出来的权重对声码器意味着什么>5.5 训练出来的权重对声码器意味着什么<a hidden class=anchor aria-hidden=true href=#55-训练出来的权重对声码器意味着什么>#</a></h3><p>回到声码器本身。<code>.pth</code> 文件中 <code>dec.*</code> 前缀的权重，到底"学"到了什么？</p><ul><li><strong><code>dec.ups.*.weight</code></strong>（上采样转置卷积）：学会了怎么把低分辨率特征平滑地拉伸到高分辨率，同时不引入明显的棋盘格伪影</li><li><strong><code>dec.resblocks.*.convs*.weight</code></strong>（ResBlock 里的膨胀卷积）：学会了在不同尺度上精炼波形的细节纹理——比如摩擦音的高频噪声特征、元音的共振峰结构</li><li><strong><code>dec.noise_convs.*.weight</code></strong>（谐波注入卷积）：学会了在每个分辨率级别上怎么利用正弦波激励源——不是简单地"加上去"，而是选择性地调整和变形</li><li><strong><code>dec.m_source.l_linear.weight</code></strong>（谐波混合层）：学会了用什么比例把基频正弦波传递给后续网络</li><li><strong><code>dec.conv_pre.weight</code></strong> 和 <strong><code>dec.conv_post.weight</code></strong>：学会了输入和输出的通道映射</li></ul><p>所有这些权重是在训练过程中通过 GAN 对抗和重建损失共同优化出来的。不同的训练数据（不同的说话人）会得到不同的权重，所以同一个声码器结构可以生成完全不同的声音——关键就在于 <code>.pth</code> 文件里的这些数字。</p><hr><h2 id=六不同采样率下的配置对比补充>六、不同采样率下的配置对比（补充）<a hidden class=anchor aria-hidden=true href=#六不同采样率下的配置对比补充>#</a></h2><p>RVC 支持 32kHz、40kHz、48kHz 三种采样率，对应不同的声码器配置：</p><table><thead><tr><th>参数</th><th>32kHz</th><th>40kHz</th><th>48kHz</th></tr></thead><tbody><tr><td>hop_length</td><td>320</td><td>400</td><td>480</td></tr><tr><td>upsample_rates</td><td>[10,4,2,2,2]</td><td>[10,10,2,2]</td><td>[10,6,2,2,2]</td></tr><tr><td>上采样总倍率</td><td>320</td><td>400</td><td>480</td></tr><tr><td>upsample_kernel_sizes</td><td>[16,16,4,4,4]</td><td>[16,16,4,4]</td><td>[16,16,4,4,4]</td></tr><tr><td>n_mel_channels</td><td>80</td><td>125</td><td>128</td></tr><tr><td>上采样阶段数</td><td>5</td><td>4</td><td>5</td></tr><tr><td>upsample_initial_channel</td><td>512</td><td>512</td><td>512</td></tr></tbody></table><p>有一个规律：<strong>上采样总倍率 = hop_length</strong>。这是因为声码器的输入是帧级别的（每帧对应 hop_length 个采样点），输出是采样点级别的，正好需要拉长 hop_length 倍。</p><p>32kHz 和 48kHz 用了 5 级上采样（多了一级 ×4 或 ×6），而 40kHz 只用 4 级（两个 ×10）。级数多意味着更细粒度的逐步还原，但也意味着更多的参数和计算量。</p><hr><h2 id=七代码中值得注意的实现细节>七、代码中值得注意的实现细节<a hidden class=anchor aria-hidden=true href=#七代码中值得注意的实现细节>#</a></h2><h3 id=71-weight_norm-而不是-batch_norm>7.1 weight_norm 而不是 batch_norm<a hidden class=anchor aria-hidden=true href=#71-weight_norm-而不是-batch_norm>#</a></h3><p>HiFi-GAN 全程使用 weight normalization。相比 batch norm，weight norm 不依赖 batch 统计量，在生成任务中表现更稳定。推理时可以通过 <code>remove_weight_norm()</code> 去掉，减少计算开销。</p><h3 id=72-leakyrelu-的斜率>7.2 LeakyReLU 的斜率<a hidden class=anchor aria-hidden=true href=#72-leakyrelu-的斜率>#</a></h3><p>整个项目里 LeakyReLU 的负半轴斜率统一是 0.1（<code>modules.py:17: LRELU_SLOPE = 0.1</code>）。这个值在 HiFi-GAN 原论文里就是这么设的，基本是业界默认。</p><h3 id=73-转置卷积的-padding-计算>7.3 转置卷积的 padding 计算<a hidden class=anchor aria-hidden=true href=#73-转置卷积的-padding-计算>#</a></h3><p>上采样用的 <code>ConvTranspose1d</code> 的 padding 是 <code>(kernel_size - stride) // 2</code>。这个公式保证输出长度恰好是输入长度 × stride，不会多出或少掉采样点。</p><h3 id=74-sinegen-中的相位连续性处理>7.4 SineGen 中的相位连续性处理<a hidden class=anchor aria-hidden=true href=#74-sinegen-中的相位连续性处理>#</a></h3><p>SineGen 的 <code>_f02sine()</code> 方法中有一段关键的相位连续性处理逻辑：</p><p><strong>帧间相位累积过程</strong></p><pre tabindex=0><code>第 1 帧                第 2 帧                第 3 帧
+┌────────────┐        ┌────────────┐        ┌────────────┐
+│ F0=220Hz   │        │ F0=440Hz   │        │ F0=330Hz   │
+│ 生成400个点│        │ 生成400个点│        │ 生成400个点│
+└──────┬─────┘        └──────┬─────┘        └──────┬─────┘
+       │                     │                     │
+       │ 取最后一个点         │ 取最后一个点         │
+       │ 的相位增量           │ 的相位增量           │
+       ▼                     ▼                     ▼
+   phase_end₁            phase_end₂            phase_end₃
+       │                     │                     │
+       └─────────────────────┼─────────────────────┘
+                             │
+                 ┌───────────▼───────────┐
+                 │  累积相位修正序列       │
+                 │  rad_acc = cumsum()   │
+                 │  保证帧间相位不跳变     │
+                 └───────────┬───────────┘
+                             │
+              ┌──────────────┴──────────────┐
+              │  加到下一帧的起始相位上       │
+              │  避免&#34;咔哒&#34;声               │
+              └─────────────────────────────┘
+
+核心机制：
+1. 每帧最后一个采样点的相位增量
+2. 通过 fmod 归一化到 [-0.5, 0.5) 防止数值累积溢出
+3. cumsum 累积相位差
+4. 用 F.pad 填充到下一帧起始位置
+</code></pre><p>这个处理保证了当 F0 在帧与帧之间变化时，正弦波的相位保持连续，不会产生相位突变导致的"咔哒"杂音。归一化到 [-0.5, 0.5) 范围是为了避免浮点数累积误差。</p><h3 id=75-torchjitscript-的兼容处理>7.5 torch.jit.script 的兼容处理<a hidden class=anchor aria-hidden=true href=#75-torchjitscript-的兼容处理>#</a></h3><p>代码里有不少 <code>__prepare_scriptable__</code> 方法和类型标注（<code>Optional[torch.Tensor]</code>）。这是为了兼容 TorchScript 编译——RVC 支持把模型导出为 TorchScript 格式以提升推理性能。<code>@torch.jit.ignore</code> 标记训练用的 forward，<code>@torch.jit.export</code> 标记推理用的 infer。</p><hr><h2 id=八回顾为什么-rvc-选择-nsf-hifi-gan>八、回顾：为什么 RVC 选择 NSF-HiFi-GAN<a hidden class=anchor aria-hidden=true href=#八回顾为什么-rvc-选择-nsf-hifi-gan>#</a></h2><p>把标准 HiFi-GAN 和 NSF 变体放在一起看，关键差异只有一处：<strong>有没有把 F0 信息显式注入生成过程</strong>。</p><p>对于 TTS（文本转语音）来说，标准 HiFi-GAN 就够了——因为 TTS 的上游模型（比如 FastSpeech）已经把音高信息编码进了 mel 频谱，声码器只需要忠实还原。</p><p>但 RVC 做的是<strong>变声</strong>。它需要把一个人的声音转换成另一个人的声音，同时允许用户手动调整音高。如果声码器不知道目标音高是多少，它就只能从隐变量里"猜"，结果往往是音高不稳、出现抖动甚至跑调。</p><p>NSF-HiFi-GAN 通过正弦波信号把 F0 &ldquo;告诉"了生成器的每一层。网络不再需要自己发明轮子来建模周期性——正弦波已经提供了准确的周期结构，网络只需要在此基础上"雕刻"出正确的音色和细节。</p><p>这种设计的代价很小（多了一个 SineGen + 几个 1D 卷积），但带来的音高稳定性提升是显著的。</p><hr><h2 id=附录-a关键类速查表>附录 A：关键类速查表<a hidden class=anchor aria-hidden=true href=#附录-a关键类速查表>#</a></h2><table><thead><tr><th>类名</th><th>文件位置</th><th>作用</th></tr></thead><tbody><tr><td><code>SineGen</code></td><td>models.py:312</td><td>根据 F0 生成正弦波</td></tr><tr><td><code>SourceModuleHnNSF</code></td><td>models.py:391</td><td>将多个谐波正弦波合并为单通道激励信号</td></tr><tr><td><code>Generator</code></td><td>models.py:204</td><td>标准 HiFi-GAN 生成器（无 F0 输入）</td></tr><tr><td><code>GeneratorNSF</code></td><td>models.py:448</td><td>NSF 增强的 HiFi-GAN 生成器（有 F0 输入）</td></tr><tr><td><code>ResBlock1</code></td><td>modules.py:252</td><td>3 轮膨胀残差块（dilation=1,3,5）</td></tr><tr><td><code>ResBlock2</code></td><td>modules.py:367</td><td>2 轮膨胀残差块（dilation=1,3）</td></tr><tr><td><code>MultiPeriodDiscriminator</code></td><td>models.py:1052</td><td>训练用判别器（MPD + MSD）</td></tr><tr><td><code>SynthesizerTrnMs256NSFsid</code></td><td>models.py:602</td><td>完整合成器（256维，带 F0）</td></tr><tr><td><code>SynthesizerTrnMs768NSFsid</code></td><td>models.py:779</td><td>完整合成器（768维，带 F0）</td></tr><tr><td><code>SynthesizerTrnMs256NSFsid_nono</code></td><td>models.py:836</td><td>完整合成器（256维，不带 F0）</td></tr><tr><td><code>SynthesizerTrnMs768NSFsid_nono</code></td><td>models.py:994</td><td>完整合成器（768维，不带 F0）</td></tr></tbody></table><h2 id=附录-b进一步阅读>附录 B：进一步阅读<a hidden class=anchor aria-hidden=true href=#附录-b进一步阅读>#</a></h2><ul><li>HiFi-GAN 原论文：<em>HiFi-GAN: Generative Adversarial Networks for Efficient and High Fidelity Speech Synthesis</em> (Kong et al., 2020)</li><li>NSF 原论文：<em>Neural Source-Filter Waveform Models for Statistical Parametric Speech Synthesis</em> (Wang et al., 2019)</li><li>VITS 论文（RVC 整体框架的基础）：<em>Conditional Variational Autoencoder with Adversarial Learning for End-to-End Text-to-Speech</em> (Kim et al., 2021)</li></ul></div><footer class=post-footer><ul class=post-tags><li><a href=https://leventureqys.github.io/tags/%E8%87%AA%E7%9B%91%E7%9D%A3%E5%AD%A6%E4%B9%A0/>自监督学习</a></li><li><a href=https://leventureqys.github.io/tags/%E6%9C%BA%E5%99%A8%E5%AD%A6%E4%B9%A0/>机器学习</a></li><li><a href=https://leventureqys.github.io/tags/rvc/>RVC</a></li></ul><nav class=paginav><a class=prev href=https://leventureqys.github.io/posts/onnx-what-makes-it-fast-or-slow/><span class=title>« Prev</span><br><span>ONNX - 它到底快在哪，又慢在哪</span>
+</a><a class=next href=https://leventureqys.github.io/posts/rvc-structure-introduction/><span class=title>Next »</span><br><span>rvc结构简介</span></a></nav><ul class=share-buttons><li><a target=_blank rel="noopener noreferrer" aria-label="share NSF-HiFiGAN-声码器学习笔记 on x" href="https://x.com/intent/tweet/?text=NSF-HiFiGAN-%e5%a3%b0%e7%a0%81%e5%99%a8%e5%ad%a6%e4%b9%a0%e7%ac%94%e8%ae%b0&amp;url=https%3a%2f%2fleventureqys.github.io%2fposts%2fnsf-hifigan-vocoder-notes%2f&amp;hashtags=%e8%87%aa%e7%9b%91%e7%9d%a3%e5%ad%a6%e4%b9%a0%2c%e6%9c%ba%e5%99%a8%e5%ad%a6%e4%b9%a0%2cRVC"><svg viewBox="0 0 512 512" height="30" width="30" fill="currentColor"><path d="M512 62.554V449.446C512 483.97 483.97 512 449.446 512H62.554C28.03 512 0 483.97.0 449.446V62.554C0 28.03 28.029.0 62.554.0H449.446C483.971.0 512 28.03 512 62.554zM269.951 190.75 182.567 75.216H56L207.216 272.95 63.9 436.783h61.366L235.9 310.383l96.667 126.4H456L298.367 228.367l134-153.151H371.033zM127.633 110h36.468l219.38 290.065H349.5z"/></svg></a></li><li><a target=_blank rel="noopener noreferrer" aria-label="share NSF-HiFiGAN-声码器学习笔记 on linkedin" href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https%3a%2f%2fleventureqys.github.io%2fposts%2fnsf-hifigan-vocoder-notes%2f&amp;title=NSF-HiFiGAN-%e5%a3%b0%e7%a0%81%e5%99%a8%e5%ad%a6%e4%b9%a0%e7%ac%94%e8%ae%b0&amp;summary=NSF-HiFiGAN-%e5%a3%b0%e7%a0%81%e5%99%a8%e5%ad%a6%e4%b9%a0%e7%ac%94%e8%ae%b0&amp;source=https%3a%2f%2fleventureqys.github.io%2fposts%2fnsf-hifigan-vocoder-notes%2f"><svg viewBox="0 0 512 512" height="30" width="30" fill="currentColor"><path d="M449.446.0C483.971.0 512 28.03 512 62.554v386.892C512 483.97 483.97 512 449.446 512H62.554c-34.524.0-62.554-28.03-62.554-62.554V62.554c0-34.524 28.029-62.554 62.554-62.554h386.892zM160.461 423.278V197.561h-75.04v225.717h75.04zm270.539.0V293.839c0-69.333-37.018-101.586-86.381-101.586-39.804.0-57.634 21.891-67.617 37.266v-31.958h-75.021c.995 21.181.0 225.717.0 225.717h75.02V297.222c0-6.748.486-13.492 2.474-18.315 5.414-13.475 17.767-27.434 38.494-27.434 27.135.0 38.007 20.707 38.007 51.037v120.768H431zM123.448 88.722C97.774 88.722 81 105.601 81 127.724c0 21.658 16.264 39.002 41.455 39.002h.484c26.165.0 42.452-17.344 42.452-39.002-.485-22.092-16.241-38.954-41.943-39.002z"/></svg></a></li><li><a target=_blank rel="noopener noreferrer" aria-label="share NSF-HiFiGAN-声码器学习笔记 on reddit" href="https://reddit.com/submit?url=https%3a%2f%2fleventureqys.github.io%2fposts%2fnsf-hifigan-vocoder-notes%2f&title=NSF-HiFiGAN-%e5%a3%b0%e7%a0%81%e5%99%a8%e5%ad%a6%e4%b9%a0%e7%ac%94%e8%ae%b0"><svg viewBox="0 0 512 512" height="30" width="30" fill="currentColor"><path d="M449.446.0C483.971.0 512 28.03 512 62.554v386.892C512 483.97 483.97 512 449.446 512H62.554c-34.524.0-62.554-28.03-62.554-62.554V62.554c0-34.524 28.029-62.554 62.554-62.554h386.892zM446 265.638c0-22.964-18.616-41.58-41.58-41.58-11.211.0-21.361 4.457-28.841 11.666-28.424-20.508-67.586-33.757-111.204-35.278l18.941-89.121 61.884 13.157c.756 15.734 13.642 28.29 29.56 28.29 16.407.0 29.706-13.299 29.706-29.701.0-16.403-13.299-29.702-29.706-29.702-11.666.0-21.657 6.792-26.515 16.578l-69.105-14.69c-1.922-.418-3.939-.042-5.585 1.036-1.658 1.073-2.811 2.761-3.224 4.686l-21.152 99.438c-44.258 1.228-84.046 14.494-112.837 35.232-7.468-7.164-17.589-11.591-28.757-11.591-22.965.0-41.585 18.616-41.585 41.58.0 16.896 10.095 31.41 24.568 37.918-.639 4.135-.99 8.328-.99 12.576.0 63.977 74.469 115.836 166.33 115.836s166.334-51.859 166.334-115.836c0-4.218-.347-8.387-.977-12.493 14.564-6.47 24.735-21.034 24.735-38.001zM326.526 373.831c-20.27 20.241-59.115 21.816-70.534 21.816-11.428.0-50.277-1.575-70.522-21.82-3.007-3.008-3.007-7.882.0-10.889 3.003-2.999 7.882-3.003 10.885.0 12.777 12.781 40.11 17.317 59.637 17.317 19.522.0 46.86-4.536 59.657-17.321 3.016-2.999 7.886-2.995 10.885.008 3.008 3.011 3.003 7.882-.008 10.889zm-5.23-48.781c-16.373.0-29.701-13.324-29.701-29.698.0-16.381 13.328-29.714 29.701-29.714 16.378.0 29.706 13.333 29.706 29.714.0 16.374-13.328 29.698-29.706 29.698zM160.91 295.348c0-16.381 13.328-29.71 29.714-29.71 16.369.0 29.689 13.329 29.689 29.71.0 16.373-13.32 29.693-29.689 29.693-16.386.0-29.714-13.32-29.714-29.693z"/></svg></a></li><li><a target=_blank rel="noopener noreferrer" aria-label="share NSF-HiFiGAN-声码器学习笔记 on facebook" href="https://facebook.com/sharer/sharer.php?u=https%3a%2f%2fleventureqys.github.io%2fposts%2fnsf-hifigan-vocoder-notes%2f"><svg viewBox="0 0 512 512" height="30" width="30" fill="currentColor"><path d="M449.446.0C483.971.0 512 28.03 512 62.554v386.892C512 483.97 483.97 512 449.446 512H342.978V319.085h66.6l12.672-82.621h-79.272v-53.617c0-22.603 11.073-44.636 46.58-44.636H425.6v-70.34s-32.71-5.582-63.982-5.582c-65.288.0-107.96 39.569-107.96 111.204v62.971h-72.573v82.621h72.573V512h-191.104c-34.524.0-62.554-28.03-62.554-62.554V62.554c0-34.524 28.029-62.554 62.554-62.554h386.892z"/></svg></a></li><li><a target=_blank rel="noopener noreferrer" aria-label="share NSF-HiFiGAN-声码器学习笔记 on whatsapp" href="https://api.whatsapp.com/send?text=NSF-HiFiGAN-%e5%a3%b0%e7%a0%81%e5%99%a8%e5%ad%a6%e4%b9%a0%e7%ac%94%e8%ae%b0%20-%20https%3a%2f%2fleventureqys.github.io%2fposts%2fnsf-hifigan-vocoder-notes%2f"><svg viewBox="0 0 512 512" height="30" width="30" fill="currentColor"><path d="M449.446.0C483.971.0 512 28.03 512 62.554v386.892C512 483.97 483.97 512 449.446 512H62.554c-34.524.0-62.554-28.03-62.554-62.554V62.554c0-34.524 28.029-62.554 62.554-62.554h386.892zm-58.673 127.703c-33.842-33.881-78.847-52.548-126.798-52.568-98.799.0-179.21 80.405-179.249 179.234-.013 31.593 8.241 62.428 23.927 89.612l-25.429 92.884 95.021-24.925c26.181 14.28 55.659 21.807 85.658 21.816h.074c98.789.0 179.206-80.413 179.247-179.243.018-47.895-18.61-92.93-52.451-126.81zM263.976 403.485h-.06c-26.734-.01-52.954-7.193-75.828-20.767l-5.441-3.229-56.386 14.792 15.05-54.977-3.542-5.637c-14.913-23.72-22.791-51.136-22.779-79.287.033-82.142 66.867-148.971 149.046-148.971 39.793.014 77.199 15.531 105.329 43.692 28.128 28.16 43.609 65.592 43.594 105.4-.034 82.149-66.866 148.983-148.983 148.984zm81.721-111.581c-4.479-2.242-26.499-13.075-30.604-14.571-4.105-1.495-7.091-2.241-10.077 2.241-2.986 4.483-11.569 14.572-14.182 17.562-2.612 2.988-5.225 3.364-9.703 1.12-4.479-2.241-18.91-6.97-36.017-22.23C231.8 264.15 222.81 249.484 220.198 245s-.279-6.908 1.963-9.14c2.016-2.007 4.48-5.232 6.719-7.847 2.24-2.615 2.986-4.484 4.479-7.472 1.493-2.99.747-5.604-.374-7.846-1.119-2.241-10.077-24.288-13.809-33.256-3.635-8.733-7.327-7.55-10.077-7.688-2.609-.13-5.598-.158-8.583-.158-2.986.0-7.839 1.121-11.944 5.604-4.105 4.484-15.675 15.32-15.675 37.364.0 22.046 16.048 43.342 18.287 46.332 2.24 2.99 31.582 48.227 76.511 67.627 10.685 4.615 19.028 7.371 25.533 9.434 10.728 3.41 20.492 2.929 28.209 1.775 8.605-1.285 26.499-10.833 30.231-21.295 3.732-10.464 3.732-19.431 2.612-21.298-1.119-1.869-4.105-2.99-8.583-5.232z"/></svg></a></li><li><a target=_blank rel="noopener noreferrer" aria-label="share NSF-HiFiGAN-声码器学习笔记 on telegram" href="https://telegram.me/share/url?text=NSF-HiFiGAN-%e5%a3%b0%e7%a0%81%e5%99%a8%e5%ad%a6%e4%b9%a0%e7%ac%94%e8%ae%b0&amp;url=https%3a%2f%2fleventureqys.github.io%2fposts%2fnsf-hifigan-vocoder-notes%2f"><svg viewBox="2 2 28 28" height="30" width="30" fill="currentColor"><path d="M26.49 29.86H5.5a3.37 3.37.0 01-2.47-1 3.35 3.35.0 01-1-2.47V5.48A3.36 3.36.0 013 3 3.37 3.37.0 015.5 2h21A3.38 3.38.0 0129 3a3.36 3.36.0 011 2.46V26.37a3.35 3.35.0 01-1 2.47 3.38 3.38.0 01-2.51 1.02zm-5.38-6.71a.79.79.0 00.85-.66L24.73 9.24a.55.55.0 00-.18-.46.62.62.0 00-.41-.17q-.08.0-16.53 6.11a.59.59.0 00-.41.59.57.57.0 00.43.52l4 1.24 1.61 4.83a.62.62.0 00.63.43.56.56.0 00.4-.17L16.54 20l4.09 3A.9.9.0 0021.11 23.15zM13.8 20.71l-1.21-4q8.72-5.55 8.78-5.55c.15.0.23.0.23.16a.18.18.0 010 .06s-2.51 2.3-7.52 6.8z"/></svg></a></li><li><a target=_blank rel="noopener noreferrer" aria-label="share NSF-HiFiGAN-声码器学习笔记 on ycombinator" href="https://news.ycombinator.com/submitlink?t=NSF-HiFiGAN-%e5%a3%b0%e7%a0%81%e5%99%a8%e5%ad%a6%e4%b9%a0%e7%ac%94%e8%ae%b0&u=https%3a%2f%2fleventureqys.github.io%2fposts%2fnsf-hifigan-vocoder-notes%2f"><svg width="30" height="30" viewBox="0 0 512 512" fill="currentColor"><path d="M449.446.0C483.971.0 512 28.03 512 62.554V449.446C512 483.97 483.97 512 449.446 512H62.554C28.03 512 0 483.97.0 449.446V62.554C0 28.03 28.029.0 62.554.0H449.446zM183.8767 87.9921h-62.034L230.6673 292.4508V424.0079h50.6655V292.4508L390.1575 87.9921H328.1233L256 238.2489z"/></svg></a></li></ul></footer></article></main><footer class=footer><span>&copy; 2026 <a href=https://leventureqys.github.io/>LeventureTecTips</a></span> ·
+<span>Powered by
+<a href=https://gohugo.io/ rel="noopener noreferrer" target=_blank>Hugo</a> &
+<a href=https://github.com/adityatelange/hugo-PaperMod/ rel=noopener target=_blank>PaperMod</a></span></footer><a href=#top aria-label="go to top" title="Go to Top (Alt + G)" class=top-link id=top-link accesskey=g><svg viewBox="0 0 12 6" fill="currentColor"><path d="M12 6H0l6-6z"/></svg>
+</a><script>let menu=document.getElementById("menu");if(menu){const e=localStorage.getItem("menu-scroll-position");e&&(menu.scrollLeft=parseInt(e,10)),menu.onscroll=function(){localStorage.setItem("menu-scroll-position",menu.scrollLeft)}}document.querySelectorAll('a[href^="#"]').forEach(e=>{e.addEventListener("click",function(e){e.preventDefault();var t=this.getAttribute("href").substr(1);window.matchMedia("(prefers-reduced-motion: reduce)").matches?document.querySelector(`[id='${decodeURIComponent(t)}']`).scrollIntoView():document.querySelector(`[id='${decodeURIComponent(t)}']`).scrollIntoView({behavior:"smooth"}),t==="top"?history.replaceState(null,null," "):history.pushState(null,null,`#${t}`)})})</script><script>var mybutton=document.getElementById("top-link");window.onscroll=function(){document.body.scrollTop>800||document.documentElement.scrollTop>800?(mybutton.style.visibility="visible",mybutton.style.opacity="1"):(mybutton.style.visibility="hidden",mybutton.style.opacity="0")}</script><script>document.getElementById("theme-toggle").addEventListener("click",()=>{const e=document.querySelector("html");e.dataset.theme==="dark"?(e.dataset.theme="light",localStorage.setItem("pref-theme","light")):(e.dataset.theme="dark",localStorage.setItem("pref-theme","dark"))})</script><script>document.querySelectorAll("pre > code").forEach(e=>{const n=e.parentNode.parentNode,t=document.createElement("button");t.classList.add("copy-code"),t.innerHTML="copy";function s(){t.innerHTML="copied!",setTimeout(()=>{t.innerHTML="copy"},2e3)}t.addEventListener("click",t=>{if("clipboard"in navigator){navigator.clipboard.writeText(e.textContent),s();return}const n=document.createRange();n.selectNodeContents(e);const o=window.getSelection();o.removeAllRanges(),o.addRange(n);try{document.execCommand("copy"),s()}catch{}o.removeRange(n)}),n.classList.contains("highlight")?n.appendChild(t):n.parentNode.firstChild==n||(e.parentNode.parentNode.parentNode.parentNode.parentNode.nodeName=="TABLE"?e.parentNode.parentNode.parentNode.parentNode.parentNode.appendChild(t):e.parentNode.appendChild(t))})</script></body></html>
