@@ -37,11 +37,11 @@ TocOpen: true
 旧方案的做法直观但粗暴——在每个传感器位置"盖一个高斯光斑"，然后把所有光斑叠起来：
 
 $$
-\text{field}[x][y] = \sum_i \text{value}_i \times \exp\!\left(-\frac{d_i^2}{2\sigma^2}\right)
+\text{field}{[x][y]} = \sum_i \text{value}_i \times \exp\!\left(-\frac{d_i^2}{2\sigma^2}\right)
 $$
 
 其中：
-- $\text{field}[x][y]$ — 像素 $(x, y)$ 处的输出值
+- $\text{field}{[x][y]}$ — 像素 $(x, y)$ 处的输出值
 - $\text{value}_i$ — 第 $i$ 个传感器的 ADC 读数
 - $d_i$ — 像素到第 $i$ 个传感器中心的欧氏距离（mm）
 - $\sigma$ — 高斯核的标准差，取 $\text{sensor\_side\_length} \times 0.5$（约 15mm），控制光斑的扩散范围
@@ -234,7 +234,7 @@ $$
 前两步的 Wendland 重建已经得到了平滑的力场，但像素级可能还有轻微噪点。最后用一次轻量高斯卷积做润色：
 
 $$
-\text{kernel}[i] = \exp\!\left(-\frac{i^2}{2\sigma^2}\right), \quad \sigma = \text{post\_gaussian\_sigma}\ \text{(px)}
+\text{kernel}{[i]} = \exp\!\left(-\frac{i^2}{2\sigma^2}\right), \quad \sigma = \text{post\_gaussian\_sigma}\ \text{(px)}
 $$
 
 关键细节：**kernel 不做归一化**（中心权重保持 1.0）。如果做了归一化（除以 kernel 总和），恒定压力区域也会被削弱。保持中心权重为 1.0 则保证恒定区域输出 = 输入，平滑只作用于变化区域。
@@ -278,7 +278,7 @@ $$
    - 对每个 cell 计算距离 $d$，若 $d \le R$ 则：
      - $\text{numer} \mathrel{+}= \text{value} \times \varphi(d / R)$
      - $\text{denom} \mathrel{+}= \varphi(d / R)$
-   - 输出 $\text{field}[x][y] = \text{numer} / \text{denom} \times \min(1, \text{denom})$
+   - 输出 $\text{field}{[x][y]} = \text{numer} / \text{denom} \times \min(1, \text{denom})$
 4. **后处理平滑**（若 `post_gaussian_sigma ≥ 0.5`）：可分离 1D 高斯卷积（先水平、后垂直）
 5. **Mask 裁剪**：将 mask 外的像素置零
 
