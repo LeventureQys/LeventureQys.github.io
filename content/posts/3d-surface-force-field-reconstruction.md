@@ -232,28 +232,7 @@ covered_welded_vertices[]
 
 ![图 7：几何缓存、实时插值与渲染更新的工程流程](/img/3d-surface-force-field/07_algorithm_workflow.png)
 
-```mermaid
-sequenceDiagram
-    participant Input as GeometryAndSamples
-    participant Reconst as Physical3DFieldReconstructor
-    participant Graph as Physical3DSurfaceGraph
-    participant Render as FieldRenderer
-
-    Note over Input,Render: 几何或 Cell 变化
-    Input->>Graph: Build(triangles)
-    Graph-->>Reconst: 焊接顶点 + 邻接表 + 连通分量
-    Input->>Reconst: RebuildCache(samples, radius)
-    Reconst-->>Render: CSR 影响缓存
-
-    Note over Input,Render: 实时帧更新
-    Input->>Reconst: ApplyColors(values, range, colortable)
-    Reconst-->>Render: expanded RGB
-    Render->>Render: update field VBO
-
-    Note over Input,Render: 显示范围变化
-    Input->>Reconst: ApplyColors(currentValues, newRange, colortable)
-    Reconst-->>Render: 新 RGB（不重建缓存）
-```
+![图 8：几何缓存、实时插值与渲染更新的数据流时序](/img/3d-surface-force-field/08_data_flow_sequence.png)
 
 ---
 
