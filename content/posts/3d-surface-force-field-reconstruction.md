@@ -1,0 +1,367 @@
+---
+author: "Leventure"
+title: "散点到 3D 曲面：力场重建工程算法"
+date: "2026-07-15"
+slug: 3d-surface-force-field-reconstruction
+description: "面向三角网格的 3D 曲面力场重建方案：顶点焊接、曲面最短路径、Wendland C2 插值、Coverage 衰减与 CSR 实时缓存"
+tags: ["Wendland", "RBF", "3D", "三角网格", "曲面重建", "插值", "实时渲染"]
+categories: ["机器学习"]
+math: true
+ShowToc: true
+TocOpen: true
+---
+
+# 散点到 3D 曲面：力场重建工程算法
+
+## 一、目标与边界
+
+本文说明如何将三角网格表面的离散 Cell 采样值重建为连续、稳定且可实时渲染的 3D 曲面力场，覆盖算法输入、几何预处理、曲面距离、插值、颜色映射、缓存、渲染和验证。
+
+算法解决以下工程问题：
+
+1. STL 三角面重复顶点导致表面拓扑断裂。
+2. 三维欧氏距离会穿过薄壁、折角或独立零件传播数值。
+3. 离散 Cell 数值需要连续插值，但不能因邻近 Cell 数量增加而产生虚假峰值。
+4. 覆盖边缘需要自然回落到模型基底颜色，不能出现硬截断。
+5. 几何计算与实时帧更新必须分离，以满足连续数据刷新需求。
+
+算法输入包括三角网格、Cell 位置与法线、当前帧采样值、显示范围和重建参数；输出为与渲染顶点一一对应的颜色数组。
+
+![图 1：从三角网格、离散 Cell 到连续曲面力场的模型定义](/img/3d-surface-force-field/01_model_surface_definition.png)
+
+### 1.1 算法全景流程
+
+```mermaid
+flowchart TB
+    subgraph Input["输入层"]
+        STL["三角网格 (triangles)"]
+        CELL["Cell 采样点 (position + normal)"]
+        FRAME["当前帧值 (values)"]
+    end
+
+    subgraph Geometry["几何缓存（低频重建）"]
+        WELD["1. 顶点焊接 —— 合并 STL 重复顶点，还原拓扑"]
+        ADJ["2. 邻接图 —— 共享边 + 连通分量 + 折角代价"]
+        ATTACH["3. Cell 附着 —— 投影到最近三角面"]
+        DIJK["4. 截断 Dijkstra —— 半径内表面最短路径"]
+        CSR["CSR 缓存 —— offsets / sample_indices / weights"]
+    end
+
+    subgraph Color["颜色计算（高频更新）"]
+        INTERP["归一化插值 P(v) = Σ(value × weight) / Σ(weight)"]
+        COV["Coverage C(v) = clamp(Σweight, 0, 1)"]
+        EFF["有效值 E(v) = minValue + (P - minValue) × C"]
+        MAP["3D 色表映射  →  per-vertex RGB"]
+    end
+
+    subgraph Render["渲染"]
+        VBO["field VBO (pos + normal + color)"]
+        SHADER["带光照的 per-vertex field shader"]
+        DISP["模型表面连续力场"]
+    end
+
+    STL --> WELD
+    CELL --> ATTACH
+    WELD --> ADJ
+    ADJ --> DIJK
+    ATTACH --> DIJK
+    DIJK --> CSR
+    CSR --> INTERP
+    FRAME --> INTERP
+    INTERP --> COV
+    COV --> EFF
+    EFF --> MAP
+    MAP --> VBO
+    VBO --> SHADER
+    SHADER --> DISP
+
+    style Geometry fill:#e1f5fe
+    style Color fill:#fff3e0
+    style Render fill:#e8f5e9
+```
+
+---
+
+## 二、曲面采样模型
+
+### 2.1 曲面距离问题
+
+目标曲面具有曲率、折角、正反面和多个独立零件，不能把它视为平面或无拓扑关系的三维点集。
+
+核心问题是：**两个点在三维空间里看起来很近，是否意味着它们沿模型表面也很近？**
+
+### 2.2 Cell 语义：离散采样，不是独立力源
+
+Cell 表示连续真实力场的离散采样点。
+
+- 重建值表达**附近采样值的加权平均**，不把多个 Cell 的数值简单相加。
+- 若四个相邻 Cell 都是 `0.6`，中间位置也应接近 `0.6`，不能仅因为附近有四个点就变成 `2.4`。
+
+以下 12 个采样点用于说明算法在圆柱曲面上的输入形式：
+
+![图 2：圆柱曲面上的 12 个 Cell 采样点布局](/img/3d-surface-force-field/02_sensor_layout.png)
+
+| 点 | z / mm | θ / ° | x / mm | y / mm | 归一化压力 |
+|---:|-------:|------:|-------:|-------:|----------:|
+| S1 | -6 | -70 | -5.638 | 37.948 | 0.18 |
+| S2 | 0 | -70 | -5.638 | 37.948 | 0.32 |
+| S3 | 6 | -70 | -5.638 | 37.948 | 0.46 |
+| S4 | -6 | -25 | -2.536 | 34.562 | 0.42 |
+| S5 | 0 | -25 | -2.536 | 34.562 | **0.82** |
+| S6 | 6 | -25 | -2.536 | 34.562 | 0.68 |
+| S7 | -6 | 25 | 2.536 | 34.562 | 0.55 |
+| S8 | 0 | 25 | 2.536 | 34.562 | **1.00** |
+| S9 | 6 | 25 | 2.536 | 34.562 | 0.76 |
+| S10 | -6 | 70 | 5.638 | 37.948 | 0.28 |
+| S11 | 0 | 70 | 5.638 | 37.948 | 0.48 |
+| S12 | 6 | 70 | 5.638 | 37.948 | 0.36 |
+
+---
+
+## 三、Wendland C2 与归一化插值
+
+### 3.1 紧支撑核
+
+算法使用 Wendland C2 作为紧支撑权重函数：
+
+$$
+\phi(r)=
+\begin{cases}
+(1-r)^4(4r+1),&0\le r<1\\
+0,&r\ge1
+\end{cases}
+$$
+
+其中 `r = d / radius`，`d` 是顶点到 Cell 的表面路径代价。
+
+性质：中心权重 1，C² 光滑，支撑半径外严格归零。
+
+![图 3：Wendland C2 紧支撑核及其权重变化](/img/3d-surface-force-field/03_wendland_kernel.png)
+
+### 3.2 为什么三维欧氏距离不够
+
+欧氏距离 `d_E = ‖x - x_i‖₂` 只看空间直线。对圆柱面来说，它量的是弦长，而真实表面传播至少要走圆弧：
+
+$$
+d_E = 2R_c\sin\frac{|\Delta\theta|}{2},\qquad
+d_S = R_c|\Delta\theta|
+$$
+
+除两点重合外，总有 `d_E ≤ d_S`。空间直线系统性低估表面传播距离，导致：
+- Wendland 权重偏大，影响范围偏宽
+- 薄壁正面 Cell 穿过实体影响背面
+- 两个空间接近的独立零件互相串色
+
+![图 4：三维欧氏距离与曲面路径距离带来的权重差异](/img/3d-surface-force-field/04_distance_and_weight_comparison.png)
+
+### 3.3 Coverage 与有效值
+
+归一化加权平均单独使用时有一个问题：只要某处还有一个非常小的非零权重，插值结果仍可能接近那个采样值。若直接着色，覆盖边缘会像被硬切断一样。
+
+因此引入覆盖置信度：
+
+```
+interpolated(v) = Σ(value_i × weight_i) / Σ(weight_i)
+coverage(v)     = clamp(Σweight_i, 0, 1)
+effective(v)    = minValue + (interpolated - minValue) × coverage(v)
+```
+
+> **注意**：coverage 已进入标量 E(v)，颜色阶段不得再次执行“灰色与热色的 RGB 混合”，否则会重复衰减并造成颜色阶跃。
+
+### 3.4 最终重建结果
+
+```mermaid
+flowchart LR
+    A["三角网格"] --> B["顶点焊接\n还原拓扑"]
+    B --> C["Cell 附着\n投影+法线一致"]
+    C --> D["截断 Dijkstra\n半径内表面最短路"]
+    D --> E["Wendland C2\n权重"]
+    E --> F["归一化插值\nP(v)"]
+    F --> G["Coverage\nC(v)"]
+    G --> H["有效值\nE(v)"]
+    H --> I["3D 色表映射\n灰→蓝→青→黄→橙→红"]
+    I --> J["连续曲面\n力场显示"]
+```
+
+---
+
+## 四、曲面路径：三角网格上的实现
+
+### 4.1 顶点焊接
+
+STL 按三角面重复保存顶点。同一几何位置在文件中可能出现多次，相邻三角形在图结构里会彼此断开。
+
+焊接容差随模型包围盒对角线缩放：
+
+```
+weldTolerance = max(diagonal × clamp(weld_tolerance_ratio, 1e-9, 1e-4), 1e-7)
+```
+
+使用空间哈希键查询同桶及相邻桶，只合并距离在容差内的顶点。
+
+### 4.2 邻接图与折角代价
+
+每个三角形的三条边形成无向图边。对于共享边，折角代价为：
+
+```
+theta = acos(clamp(abs(dot(n0, n1)), 0, 1))
+cost  = edgeLength × (1 + foldPenalty × (theta / pi)^2)
+```
+
+`foldPenalty` 默认 `2.0`。使用 `abs(dot)` 避免法线翻转造成假折角。边界边只用 `edgeLength`。非流形边取相邻面的最大折角代价。
+
+### 4.3 Cell 附着与截断 Dijkstra
+
+1. 计算 Cell 中心到每个三角形的最近点与距离。
+2. 最近距离选最近三角形；距离相同时优先匹配法线。
+3. 从最近点到三个焊接顶点的距离作为 Dijkstra 初始代价。
+4. 只扩展累计代价 `≤ radius_model` 的顶点。
+
+不同连通分量之间严格禁止传播。薄壁正背面只能沿表面边界绕行，不走空间捷径。
+
+![图 5：网格展开后的连通分量与跨表面传播隔离](/img/3d-surface-force-field/05_unwrapped_components.png)
+
+### 4.4 通用三角网格流程
+
+任意三角网格均执行同一流程：清理退化面、焊接重复顶点、建立共享边邻接、计算连通分量、附着 Cell、运行半径截断的 Dijkstra，最后生成稀疏影响缓存。算法不要求模型具有规则参数化，也不要求 Cell 按行列排列。
+
+---
+
+## 五、缓存架构与性能
+
+### 5.1 CSR 缓存
+
+几何缓存和实时数值严格分离：
+
+```
+offsets[weldedVertexCount + 1]
+sample_indices[influenceCount]
+weights[influenceCount]
+covered_welded_vertices[]
+```
+
+| 缓存层 | 构建时机 | 频率 |
+|--------|----------|------|
+| 表面图（焊接+邻接+连通分量） | 模型/Cell/半径变化 | 低频（用户操作） |
+| 影响缓存（CSR） | 表面图变更后 | 低频 |
+| 颜色缓存（展开顶点 RGB） | 帧值/图例范围变化 | 高频（实时刷新） |
+
+实时着色时只需遍历覆盖顶点，乘以当前帧值即可，无需重复运行 Dijkstra。
+
+### 5.2 性能指标
+
+代表性输入规模为 1656 个三角形、31 个 Cell 和 814 个焊接顶点：
+
+| 指标 | 值 |
+|------|-----|
+| 初次缓存构建 | ~5.5 ms |
+| 单帧颜色更新（20 帧平均） | ~0.02 ms |
+| 覆盖顶点比例 | 4118/4968 (82.9%) |
+
+---
+
+## 六、颜色映射与渲染输出
+
+### 6.1 灰底色表
+
+从模型灰连续过渡到高饱和热色，6 个色标 RGB 线性插值生成 256 项色表：
+
+| 位置 | RGB | 语义 |
+|------|-----|------|
+| 0.00 | 140, 140, 148 | 模型灰（无覆盖/零值基线） |
+| 0.12 | 32, 76, 180 | 深蓝 |
+| 0.35 | 0, 190, 220 | 青 |
+| 0.60 | 245, 220, 55 | 黄 |
+| 0.80 | 245, 125, 35 | 橙 |
+| 1.00 | 220, 35, 35 | 红 |
+
+模型着色和图例共用 `CreatePhysical3DColorTable()`，保证像素级一致。
+
+### 6.2 渲染输出
+
+重建开启时，算法输出每顶点 RGB，写入 field VBO 并由 per-vertex shader 完成三角面内插值。重建关闭时，不计算连续场，只按 Cell 当前值生成离散着色。
+
+![图 6：离散采样值在 3D 曲面上的连续重建结果](/img/3d-surface-force-field/06_surface_reconstruction.png)
+
+- 光照系数：`0.65 + 0.35 × max(dot(N, L), 0)`，保持立体感。
+- 低值阈值：`low_value_threshold_ratio = 0.02`，低于阈值保持模型灰。
+
+### 6.3 数据流
+
+![图 7：几何缓存、实时插值与渲染更新的工程流程](/img/3d-surface-force-field/07_algorithm_workflow.png)
+
+```mermaid
+sequenceDiagram
+    participant Input as GeometryAndSamples
+    participant Reconst as Physical3DFieldReconstructor
+    participant Graph as Physical3DSurfaceGraph
+    participant Render as FieldRenderer
+
+    Note over Input,Render: 几何或 Cell 变化
+    Input->>Graph: Build(triangles)
+    Graph-->>Reconst: 焊接顶点 + 邻接表 + 连通分量
+    Input->>Reconst: RebuildCache(samples, radius)
+    Reconst-->>Render: CSR 影响缓存
+
+    Note over Input,Render: 实时帧更新
+    Input->>Reconst: ApplyColors(values, range, colortable)
+    Reconst-->>Render: expanded RGB
+    Render->>Render: update field VBO
+
+    Note over Input,Render: 显示范围变化
+    Input->>Reconst: ApplyColors(currentValues, newRange, colortable)
+    Reconst-->>Render: 新 RGB（不重建缓存）
+```
+
+---
+
+## 七、关键设计决策
+
+1. **Cell 语义**：离散采样点，使用归一化插值，不做加性叠加。
+2. **距离度量**：使用曲面最短路径和折角代价，不使用三维欧氏距离传播力值。
+3. **色带**：3D 专用连续灰底色表，模型和图例共用同一函数。
+4. **缓存策略**：几何/数值分离，CSR 只随几何变化重建，帧值变化仅更新颜色。
+5. **重建开关**：控制是否输出 Wendland 连续场，关闭时只输出离散 Cell 着色。
+6. **低值处理**：低于 2% 阈值保持模型灰，不让黑色覆盖模型。
+7. **coverage 使用**：乘入有效标量后颜色阶段不再做第二次 RGB 混合。
+8. **不做无约束平滑**：连续性由表面路径 + Wendland + coverage + 三角内插值共同保证。
+
+---
+
+## 八、算法约束
+
+- 输入三角网格必须包含有效顶点和非退化三角面。
+- Cell 必须具有位置；法线用于附着候选的方向一致性判断。
+- 不引入有限元、材料参数、应力或接触力学模型。
+- 不跨网格连通分量传播采样值。
+- 不使用无约束后置平滑跨越曲面边界。
+- 插值结果不得制造超过有效邻域采样值域的虚假峰值。
+- 重建半径、焊接容差和折角代价必须按模型尺度设置。
+
+---
+
+## 九、算法验证
+
+算法验证按功能主题组织：
+
+| 测试主题 | 测试数 | 说明 |
+|----------|--------|------|
+| 表面图（焊接、Dijkstra、折角） | ~15 | 几何正确性、连通分量隔离 |
+| 重建器（CSR、插值、coverage） | ~15 | 数值语义、边界条件、缓存生命周期 |
+| 色表 | ~8 | 256 项、色标端点、颜色连续性 |
+| 渲染状态 | ~8 | 重建开关、颜色更新、模型矩阵 |
+| 端到端重建 | 5 | 网格加载、缓存构建、插值、着色和缓存复用 |
+
+验证重点不是界面或其他业务模块，而是以下算法性质：
+
+1. 等值采样不会因采样点数量增加而产生无依据增益。
+2. 非等值采样的结果保持在有效邻域值域内。
+3. coverage 在支撑边界连续回落，不形成硬边。
+4. 薄壁正反面和不同连通分量之间不会串色。
+5. 折角会增加路径代价并减弱跨折角传播。
+6. 帧值和显示范围变化只更新颜色，不重建几何缓存。
+7. 模型表面和图例使用同一色表，颜色映射保持一致。
+
+## 十、工程结论
+
+该算法通过“焊接拓扑、曲面最短路径、Wendland C2、coverage、灰底色带和 CSR 缓存”构成完整闭环。几何阶段负责建立真实曲面传播关系，实时阶段只执行稀疏加权和颜色更新，从而同时满足曲面隔离、数值稳定、边缘连续和实时渲染要求。
