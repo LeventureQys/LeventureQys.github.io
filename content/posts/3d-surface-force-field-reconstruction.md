@@ -31,54 +31,7 @@ TocOpen: true
 
 ### 1.1 算法全景流程
 
-```mermaid
-flowchart TB
-    subgraph Input["输入层"]
-        STL["三角网格 (triangles)"]
-        CELL["Cell 采样点 (position + normal)"]
-        FRAME["当前帧值 (values)"]
-    end
-
-    subgraph Geometry["几何缓存（低频重建）"]
-        WELD["1. 顶点焊接 —— 合并 STL 重复顶点，还原拓扑"]
-        ADJ["2. 邻接图 —— 共享边 + 连通分量 + 折角代价"]
-        ATTACH["3. Cell 附着 —— 投影到最近三角面"]
-        DIJK["4. 截断 Dijkstra —— 半径内表面最短路径"]
-        CSR["CSR 缓存 —— offsets / sample_indices / weights"]
-    end
-
-    subgraph Color["颜色计算（高频更新）"]
-        INTERP["归一化插值 P(v) = Σ(value × weight) / Σ(weight)"]
-        COV["Coverage C(v) = clamp(Σweight, 0, 1)"]
-        EFF["有效值 E(v) = minValue + (P - minValue) × C"]
-        MAP["3D 色表映射  →  per-vertex RGB"]
-    end
-
-    subgraph Render["渲染"]
-        VBO["field VBO (pos + normal + color)"]
-        SHADER["带光照的 per-vertex field shader"]
-        DISP["模型表面连续力场"]
-    end
-
-    STL --> WELD
-    CELL --> ATTACH
-    WELD --> ADJ
-    ADJ --> DIJK
-    ATTACH --> DIJK
-    DIJK --> CSR
-    CSR --> INTERP
-    FRAME --> INTERP
-    INTERP --> COV
-    COV --> EFF
-    EFF --> MAP
-    MAP --> VBO
-    VBO --> SHADER
-    SHADER --> DISP
-
-    style Geometry fill:#e1f5fe
-    style Color fill:#fff3e0
-    style Render fill:#e8f5e9
-```
+![图 1-1：3D 曲面力场重建算法全景流程](/img/3d-surface-force-field/00_algorithm_overview.png)
 
 ---
 
@@ -170,18 +123,7 @@ effective(v)    = minValue + (interpolated - minValue) × coverage(v)
 
 ### 3.4 最终重建结果
 
-```mermaid
-flowchart LR
-    A["三角网格"] --> B["顶点焊接\n还原拓扑"]
-    B --> C["Cell 附着\n投影+法线一致"]
-    C --> D["截断 Dijkstra\n半径内表面最短路"]
-    D --> E["Wendland C2\n权重"]
-    E --> F["归一化插值\nP(v)"]
-    F --> G["Coverage\nC(v)"]
-    G --> H["有效值\nE(v)"]
-    H --> I["3D 色表映射\n灰→蓝→青→黄→橙→红"]
-    I --> J["连续曲面\n力场显示"]
-```
+![图 4-1：3D 曲面力场重建算法全景流程](/img/3d-surface-force-field/07_algorithm_workflow.png)
 
 ---
 
