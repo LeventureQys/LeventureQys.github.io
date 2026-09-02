@@ -1,7 +1,7 @@
 ---
 author: "Konpaku Youran"
 title: "一个基本问题：当我们谈论移植的时候，我们聊的是 ONNX 还是自定义算子？"
-date: "2026-03-16"
+date: "2026-09-02"
 slug: onnx-or-custom-operator-porting
 description: "模型部署时，如何在 ONNX Runtime 与原生 C++ 自定义算子之间做选型。"
 tags: ["算法", "机器学习", "ONNX", "C++"]
