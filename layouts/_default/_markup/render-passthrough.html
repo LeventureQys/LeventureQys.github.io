@@ -1,8 +1,12 @@
+{{- /* Math source must be HTML-escaped: a raw "<" inside a formula (e.g. $a<b$) would
+       otherwise be parsed as the start of an HTML tag by the browser, which then swallows
+       everything up to the next ">". KaTeX auto-render reads textContent, so entities are
+       decoded back before typesetting. Same reason for escaping "&" in cases/aligned bodies. */ -}}
 {{- $inner := .Inner | strings.TrimSpace -}}
 {{- if eq .Type "block" }}
 <div class="math math-display">$$
-{{ $inner | safeHTML }}
+{{ $inner }}
 $$</div>
 {{- else -}}
-<span class="math math-inline">${{ $inner | safeHTML }}$</span>
+<span class="math math-inline">${{ $inner }}$</span>
 {{- end -}}
