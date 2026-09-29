@@ -27,7 +27,7 @@ params:
   homeInfoParams:
     Title: LeventureTecTips
     Content: >
-      Welcome to Leventure's Tech Blog.
+      Trivial Tactile Researcher.
 
   socialIcons:
     - name: github
