@@ -27,49 +27,62 @@ body.dark .pdf-viewer .pdf-controls button:hover { background: #3a3a40; }
 </style>
 {{ end }}
 {{ if .Params.math }}
-<link rel="stylesheet" href="/vendor/katex/katex.min.css">
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script>
+{{- /* KaTeX 全部本地托管（static/vendor/katex）。之前 katex.min.js 与 auto-render.min.js
+       走 cdn.jsdelivr.net，JS 加载失败时页面只剩 $...$ 源文本，且 CDN 被墙/被代理拦截时
+       没有任何提示。字体与 CSS 本来就是本地文件，这里把脚本也补齐，页面不再依赖外网。 */ -}}
+<link rel="stylesheet" href="{{ "/vendor/katex/katex.min.css" | relURL }}">
+<script defer src="{{ "/vendor/katex/katex.min.js" | relURL }}"></script>
+<script defer src="{{ "/vendor/katex/auto-render.min.js" | relURL }}"></script>
 <script>
-  document.addEventListener('DOMContentLoaded', function () {
-    if (typeof renderMathInElement !== 'function') {
-      return;
-    }
-
-    var mathBlocks = document.querySelectorAll('.math.math-display');
-    for (var i = 0; i < mathBlocks.length; i++) {
-      var block = mathBlocks[i];
-      var source = block.textContent.trim();
-
-      if (source.slice(0, 2) !== '$$' || source.slice(-2) !== '$$') {
-        continue;
+  (function () {
+    function renderAllMath() {
+      if (typeof renderMathInElement !== 'function') {
+        return;
       }
 
-      var inner = source.slice(2, -2).trim();
-      var hasEnvironment = /\\begin\{[a-zA-Z*]+\}/.test(inner);
-      var hasLineBreak = inner.indexOf('\\\\') !== -1;
+      var mathBlocks = document.querySelectorAll('.math.math-display');
+      for (var i = 0; i < mathBlocks.length; i++) {
+        var block = mathBlocks[i];
+        var source = block.textContent.trim();
 
-      if (hasLineBreak && !hasEnvironment) {
-        var wrapper = inner.indexOf('&') !== -1 ? 'aligned' : 'gathered';
-        block.textContent = '$$\n\\begin{' + wrapper + '}\n' + inner + '\n\\end{' + wrapper + '}\n$$';
+        if (source.slice(0, 2) !== '$$' || source.slice(-2) !== '$$') {
+          continue;
+        }
+
+        var inner = source.slice(2, -2).trim();
+        var hasEnvironment = /\\begin\{[a-zA-Z*]+\}/.test(inner);
+        var hasLineBreak = inner.indexOf('\\\\') !== -1;
+
+        if (hasLineBreak && !hasEnvironment) {
+          var wrapper = inner.indexOf('&') !== -1 ? 'aligned' : 'gathered';
+          block.textContent = '$$\n\\begin{' + wrapper + '}\n' + inner + '\n\\end{' + wrapper + '}\n$$';
+        }
+      }
+
+      var mathNodes = document.querySelectorAll('.math');
+      for (var j = 0; j < mathNodes.length; j++) {
+        renderMathInElement(mathNodes[j], {
+          delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$', right: '$', display: false},
+            {left: '\\(', right: '\\)', display: false},
+            {left: '\\[', right: '\\]', display: true}
+          ],
+          ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+          ignoredClasses: ['highlight', 'chroma'],
+          throwOnError: false,
+          strict: 'ignore'
+        });
       }
     }
 
-    var mathNodes = document.querySelectorAll('.math');
-    for (var j = 0; j < mathNodes.length; j++) {
-      renderMathInElement(mathNodes[j], {
-        delimiters: [
-          {left: '$$', right: '$$', display: true},
-          {left: '$', right: '$', display: false},
-          {left: '\\(', right: '\\)', display: false},
-          {left: '\\[', right: '\\]', display: true}
-        ],
-        ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
-        ignoredClasses: ['highlight', 'chroma'],
-        throwOnError: false,
-        strict: 'ignore'
-      });
+    // defer 脚本在 DOMContentLoaded 之前执行，正常走事件即可；若页面被 bfcache
+    // 恢复或脚本晚于 DOM 就绪，则直接渲染，避免出现“永远等不到事件”的情况。
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderAllMath);
+    } else {
+      renderAllMath();
     }
-  });
+  })();
 </script>
 {{ end }}
